@@ -567,6 +567,7 @@ dependencies = [
  "deckard-core",
  "deckard-input",
  "deckard-library",
+ "deckard-system",
  "deckard-ui",
  "deckard-video",
  "dirs",
@@ -622,6 +623,15 @@ name = "deckard-library"
 version = "0.1.0"
 dependencies = [
  "deckard-config",
+ "tracing",
+]
+
+[[package]]
+name = "deckard-system"
+version = "0.1.0"
+dependencies = [
+ "dirs",
+ "thiserror 2.0.21",
  "tracing",
 ]
 

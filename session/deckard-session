@@ -1,12 +1,13 @@
 #!/usr/bin/env bash
-# Deckard session, started by greetd at boot (see os/archiso/airootfs/etc/greetd).
+# Deckard session manager, started by greetd at boot.
 #
-# On real hardware Deckard runs inside gamescope (the compositor SteamOS uses:
-# it handles the Deck's portrait panel, vsync and scaling). In virtual machines
-# there is usually no Vulkan GPU for gamescope, so the kiosk compositor cage is
-# used instead and Deckard renders through Mesa's software Vulkan (lavapipe).
+# Runs in a loop: reads ~/.local/state/deckard/next-session to decide which
+# session to start (deckard or steam), launches it and waits. When the session
+# exits, the loop reads the file again. If the file does not exist after a
+# session exits (nobody wrote it), the loop ends and greetd falls back to the
+# text login (agreety) for debugging.
 #
-# Overrides (e.g. in ~/.config/deckard/session.env):
+# Overrides (in ~/.config/deckard/session.env):
 #   DECKARD_COMPOSITOR=gamescope|cage   force a compositor
 #   DECKARD_GAMESCOPE_ARGS="..."        extra gamescope arguments
 set -euo pipefail
@@ -21,9 +22,12 @@ if [[ -f "$config_dir/session.env" ]]; then
 fi
 
 log="$state_dir/session.log"
-exec >>"$log" 2>&1
+exec >> "$log" 2>&1
 echo "=== deckard-session $(date --iso-8601=seconds)"
 
+next_session_file="$state_dir/next-session"
+
+# Detect the compositor once at startup.
 compositor="${DECKARD_COMPOSITOR:-}"
 if [[ -z "$compositor" ]]; then
   if systemd-detect-virt --quiet; then
@@ -34,16 +38,64 @@ if [[ -z "$compositor" ]]; then
 fi
 echo "compositor: $compositor"
 
-case "$compositor" in
-  gamescope)
-    # shellcheck disable=SC2086 # word splitting of the extra arguments is intended
-    exec gamescope -f ${DECKARD_GAMESCOPE_ARGS:-} -- deckard --fullscreen
-    ;;
-  cage)
-    exec cage -s -- deckard --fullscreen
-    ;;
-  *)
-    echo "unknown compositor: $compositor" >&2
-    exit 1
-    ;;
-esac
+# ---- session loop ----
+# On first boot next-session usually does not exist → default to deckard.
+# After that, the frontend or the switch script writes it before exiting.
+first_run=true
+
+while true; do
+  if [[ -f "$next_session_file" ]]; then
+    session=$(<"$next_session_file")
+    rm -f "$next_session_file"
+  elif "$first_run"; then
+    session=deckard
+  else
+    # No file after a session exited: stop the loop (crash/debug scenario).
+    echo "no next-session file, exiting session manager"
+    break
+  fi
+  first_run=false
+
+  echo "--- starting session: $session ($(date --iso-8601=seconds))"
+
+  case "$session" in
+    deckard)
+      case "$compositor" in
+        gamescope)
+          # shellcheck disable=SC2086 # word splitting intended
+          gamescope -f ${DECKARD_GAMESCOPE_ARGS:-} -- deckard --fullscreen || true
+          ;;
+        cage)
+          cage -s -- deckard --fullscreen || true
+          ;;
+        *)
+          echo "unknown compositor: $compositor" >&2
+          break
+          ;;
+      esac
+      ;;
+    steam)
+      case "$compositor" in
+        gamescope)
+          # shellcheck disable=SC2086 # word splitting intended
+          gamescope -f ${DECKARD_GAMESCOPE_ARGS:-} -- steam -gamepadui -steamos3 -steampal -steamdeck || true
+          ;;
+        cage)
+          echo "Steam requires gamescope (Vulkan GPU); cannot run under cage" >&2
+          # Fall back to deckard on next iteration.
+          echo "deckard" > "$next_session_file"
+          ;;
+        *)
+          echo "unknown compositor: $compositor" >&2
+          break
+          ;;
+      esac
+      ;;
+    *)
+      echo "unknown session: $session" >&2
+      break
+      ;;
+  esac
+
+  echo "--- session '$session' exited ($(date --iso-8601=seconds))"
+done

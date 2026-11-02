@@ -18,6 +18,7 @@ deckard-video = { path = "crates/deckard-video" }
 deckard-config = { path = "crates/deckard-config" }
 deckard-library = { path = "crates/deckard-library" }
 deckard-ui = { path = "crates/deckard-ui" }
+deckard-system = { path = "crates/deckard-system" }
 anyhow = "1"
 bytemuck = { version = "1", features = ["derive"] }
 cc = "1"

@@ -9,6 +9,7 @@ greetd
 gamescope
 xorg-xwayland
 cage
+steam
 
 # Graphics: AMD (Steam Deck) and software Vulkan for virtual machines
 mesa

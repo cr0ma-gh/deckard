@@ -30,6 +30,8 @@ pub enum Action {
     },
     Rescan,
     Quit,
+    /// Switch to another session (e.g. Steam Big Picture).
+    SwitchSession,
     /// Flip or cycle a setting.
     Toggle(Setting),
     /// Show a short message (e.g. why a game cannot start).
@@ -57,6 +59,8 @@ pub enum Setting {
 pub struct SettingsView {
     pub integer_scale: bool,
     pub smooth: bool,
+    /// Whether the "Switch to Steam" item should appear.
+    pub session_switching: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -146,6 +150,16 @@ impl Menu {
                 },
             ],
         }];
+
+        if settings.session_switching {
+            categories[0].items.push(Item {
+                id: "switch_session".into(),
+                label: strings.switch_to_steam.clone(),
+                sublabel: Some(strings.switch_to_steam_info.clone()),
+                thumbnail: None,
+                action: Some(Action::SwitchSession),
+            });
+        }
 
         for (si, system) in library.systems.iter().enumerate() {
             if system.games.is_empty() {
@@ -460,6 +474,7 @@ mod tests {
         let on = SettingsView {
             integer_scale: false,
             smooth: true,
+            session_switching: false,
         };
         m.replace(Menu::build(&lib, &strings, Path::new("roms"), &on));
         assert_eq!(m.selected_category(), 0);
@@ -467,6 +482,36 @@ mod tests {
             m.selected_item().map(|i| i.label.as_str()),
             Some("Filtro morbido: Sì")
         );
+    }
+
+    #[test]
+    fn session_switching_item_presence() {
+        let strings = Strings::load("en");
+        let lib = library();
+        let without_switch =
+            Menu::build(&lib, &strings, Path::new("roms"), &SettingsView::default());
+        assert!(
+            !without_switch.categories[0]
+                .items
+                .iter()
+                .any(|i| i.id == "switch_session")
+        );
+
+        let with_switch = Menu::build(
+            &lib,
+            &strings,
+            Path::new("roms"),
+            &SettingsView {
+                session_switching: true,
+                ..Default::default()
+            },
+        );
+        let switch_item = with_switch.categories[0]
+            .items
+            .iter()
+            .find(|i| i.id == "switch_session");
+        assert!(switch_item.is_some());
+        assert_eq!(switch_item.unwrap().action, Some(Action::SwitchSession));
     }
 
     #[test]

@@ -37,11 +37,11 @@ Registra ogni nuova decisione architetturale in `docs/decisions/` (formato ADR b
 
 ## 3. Struttura del repository (prevista) `[CONDIVISO]`
 
-Esistono già (Fasi 0–3): tutti i crate tranne `deckard-system`, `os/`,
-`packages/deckard/`, `session/deckard-session`, `scripts/` (build ISO, QEMU),
-la CI (`.github/workflows/ci.yml`: Rust + shellcheck; `iso.yml`: immagine) e
-`docs/decisions/`. `deckard-system` e `docs/hardware.md` sono previsti: creali
-nella fase in cui servono, non prima. Aggiorna questa sezione quando la
+Esistono già (Fasi 0–4): tutti i crate (incluso `deckard-system`), `os/`,
+`packages/deckard/`, `session/` (`deckard-session`, `switch-to-deckard.sh`),
+`scripts/` (build ISO, QEMU), la CI (`.github/workflows/ci.yml`: Rust + shellcheck;
+`iso.yml`: immagine) e `docs/decisions/`. `docs/hardware.md` è previsto: crealo
+nella fase in cui serve, non prima. Aggiorna questa sezione quando la
 struttura cambia.
 
 Il repository è pubblico: **github.com/cr0ma-gh/deckard** (remote `origin`).
@@ -271,7 +271,7 @@ Comandi non gestiti: restituire `false` e loggare una volta sola a livello `debu
 - Ventola, TDP, luminosità, batteria: tramite sysfs/strumenti standard. Nessuna
   modifica a firmware/BIOS del Deck.
 - Prima: immagine live ISO avviabile da USB. Installer su disco interno: fase
-  successiva (mai scrivere su disco senza conferma esplicita dell'utente finale).
+  successiva (Fase 6; mai scrivere su disco senza conferma esplicita dell'utente finale).
 
 ## 6. Ambiente di sviluppo e comandi `[CONDIVISO]`
 
@@ -385,8 +385,14 @@ Se aggiungi o cambi comandi, aggiorna questa sezione.
 4. **Fase 3** — Profilo archiso avviabile su Steam Deck LCD con Deckard in autostart.
    File pronti (profilo, PKGBUILD, sessione, script, workflow ISO); da verificare:
    la build in CI, l'avvio in QEMU e poi sul Deck (pannello, controlli, audio).
-5. **Fase 4** — Dual mode con Steam/gamescope e cambio sessione.
-6. **Fase 5** — Core hardware (Vulkan, poi GL), shader, menu rapido completo, installer.
+5. **Fase 4** ✅ — Dual mode con Steam/gamescope e cambio sessione (`deckard-system`,
+   protocollo `next-session`, session manager a loop, `switch-to-deckard.sh`,
+   voce "Passa a Steam" nel menu Impostazioni).
+6. **Fase 5** — Core hardware (Vulkan, poi GL), shader, menu rapido completo.
+7. **Fase 6** — Installer su disco interno (NVMe / eMMC / microSD): procedura guidata
+   dall'interfaccia o da script per installare Deckard permanentemente su disco, con
+   partizionamento automatico (EFI + root btrfs/ext4), bootloader systemd-boot e
+   conferma esplicita dell'utente prima di qualsiasi scrittura su disco.
 
 Lavora una fase alla volta; non anticipare funzionalità di fasi successive senza richiesta.
 

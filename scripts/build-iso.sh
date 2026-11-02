@@ -87,6 +87,9 @@ cat "$custom/profiledef.overrides.sh" >>"$profile/profiledef.sh"
 # Overlay files (greetd, user, sudo, hostname, default config).
 cp -a "$custom/airootfs/." "$profile/airootfs/"
 
+# Enable multilib for Steam (releng has it commented out by default).
+sed -i '/^#\[multilib\]/,/^#Include/ s/^#//' "$profile/pacman.conf"
+
 # Local repository with the deckard package.
 cat >>"$profile/pacman.conf" <<EOF
 

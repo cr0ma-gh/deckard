@@ -13,6 +13,8 @@ pub struct Strings {
     pub rescan_info: String,
     pub quit: String,
     pub quit_info: String,
+    pub switch_to_steam: String,
+    pub switch_to_steam_info: String,
     pub no_games: String,
     pub no_games_info: String,
     pub game_count: String,

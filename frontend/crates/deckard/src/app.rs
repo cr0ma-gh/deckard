@@ -10,6 +10,7 @@ use deckard_audio::AudioOutput;
 use deckard_config::{Config, Paths};
 use deckard_input::{Hotkeys, Input, MenuButtons, key_code};
 use deckard_library::Library;
+use deckard_system::SessionTarget;
 use deckard_ui::UiRenderer;
 use deckard_ui::i18n::{Strings, fill, next_language};
 use deckard_ui::layout::{Hints, MenuView, QuickHints, Toast, game_overlay, layout};
@@ -52,6 +53,7 @@ impl Context {
         SettingsView {
             integer_scale: self.config.video.integer_scale,
             smooth: self.config.video.smooth,
+            session_switching: deckard_system::session_switching_available(),
         }
     }
 
@@ -285,6 +287,7 @@ impl App {
     fn perform(&mut self, action: Action, event_loop: &ActiveEventLoop) {
         match action {
             Action::Quit => event_loop.exit(),
+            Action::SwitchSession => self.switch_session(event_loop),
             Action::Notice(message) => self.view.show_toast(message),
             Action::Rescan => {
                 self.ctx.library = Library::scan(&self.ctx.config, &self.ctx.paths);
@@ -330,6 +333,17 @@ impl App {
             tracing::error!("cannot save the configuration: {e}");
             self.view.show_toast(e.to_string());
         }
+    }
+
+    /// Writes the `next-session` file to request Steam and exits.
+    fn switch_session(&mut self, event_loop: &ActiveEventLoop) {
+        let state_dir = deckard_system::state_dir();
+        if let Err(e) = deckard_system::request_session_switch(SessionTarget::Steam, &state_dir) {
+            tracing::error!("cannot request session switch: {e}");
+            self.view.show_toast(e.to_string());
+            return;
+        }
+        event_loop.exit();
     }
 
     fn launch(&mut self, system: usize, game: usize) {

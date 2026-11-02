@@ -18,6 +18,7 @@ makedepends=('rust' 'pkgconf')
 optdepends=(
   'gamescope: Deckard session on real hardware'
   'cage: Deckard session in virtual machines'
+  'steam: Steam Big Picture session'
   'libretro-snes9x: Super Nintendo core'
   'libretro-mgba: Game Boy Advance core'
   'libretro-gambatte: Game Boy / Game Boy Color core'
@@ -39,6 +40,7 @@ build() {
 package() {
   install -Dm755 "$srcdir/target/release/deckard" "$pkgdir/usr/bin/deckard"
   install -Dm755 "$_root/session/deckard-session" "$pkgdir/usr/bin/deckard-session"
+  install -Dm755 "$_root/session/switch-to-deckard.sh" "$pkgdir/usr/bin/switch-to-deckard"
   install -Dm644 "$_root/LICENSE" "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
   install -Dm644 "$_root/frontend/crates/deckard-ui/assets/fonts/OFL.txt" \
     "$pkgdir/usr/share/licenses/$pkgname/OFL-Inter.txt"

@@ -13,6 +13,7 @@ deckard-config.workspace = true
 deckard-core.workspace = true
 deckard-input.workspace = true
 deckard-library.workspace = true
+deckard-system.workspace = true
 deckard-ui.workspace = true
 deckard-video.workspace = true
 anyhow.workspace = true
