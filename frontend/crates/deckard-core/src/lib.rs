@@ -514,6 +514,35 @@ impl Core {
             self.with_core(|api| unsafe { (api.unserialize)(state.as_ptr().cast(), state.len()) });
         ok.then_some(()).ok_or(CoreError::SaveState)
     }
+
+    /// Saves the emulation state to a file (written atomically).
+    pub fn save_state_to(&mut self, path: &Path) -> Result<(), CoreError> {
+        let state = self.serialize()?;
+        let io_err = |source| CoreError::Io {
+            path: path.into(),
+            source,
+        };
+        if let Some(dir) = path.parent() {
+            fs::create_dir_all(dir).map_err(io_err)?;
+        }
+        let mut tmp = path.as_os_str().to_owned();
+        tmp.push(".tmp");
+        fs::write(&tmp, &state).map_err(io_err)?;
+        fs::rename(&tmp, path).map_err(io_err)?;
+        tracing::info!(path = %path.display(), bytes = state.len(), "state saved");
+        Ok(())
+    }
+
+    /// Restores the emulation state from a file written by [`Core::save_state_to`].
+    pub fn load_state_from(&mut self, path: &Path) -> Result<(), CoreError> {
+        let state = fs::read(path).map_err(|source| CoreError::Io {
+            path: path.into(),
+            source,
+        })?;
+        self.unserialize(&state)?;
+        tracing::info!(path = %path.display(), "state loaded");
+        Ok(())
+    }
 }
 
 impl Drop for Core {

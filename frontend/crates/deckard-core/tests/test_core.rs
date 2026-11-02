@@ -218,3 +218,37 @@ fn only_one_core_per_process() {
         Err(CoreError::AlreadyLoaded)
     ));
 }
+
+#[test]
+fn save_states_to_files() {
+    let _lock = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
+    let dir = TempDir::new("state-files");
+    let mut core = start(config(&dir));
+    let path = dir.0.join("states").join("snes").join("game.state1");
+
+    core.run_frame();
+    core.save_state_to(&path).unwrap();
+    assert!(path.is_file());
+    let saved = core.serialize().unwrap();
+    for _ in 0..5 {
+        core.run_frame();
+    }
+    core.load_state_from(&path).unwrap();
+    assert_eq!(core.serialize().unwrap(), saved);
+
+    assert!(matches!(
+        core.load_state_from(&dir.0.join("missing.state")),
+        Err(CoreError::Io { .. })
+    ));
+}
+
+#[test]
+fn reports_changed_options() {
+    let _lock = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
+    let dir = TempDir::new("changed");
+    let mut core = start(config(&dir));
+    assert_eq!(core.options().changed().count(), 0);
+    core.set_option("deckard_test_speed", "4");
+    let changed: Vec<_> = core.options().changed().collect();
+    assert_eq!(changed, [("deckard_test_speed", "4")]);
+}

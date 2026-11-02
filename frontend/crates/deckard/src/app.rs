@@ -1,12 +1,14 @@
 //! Window, event loop and the emulation main loop.
 
+use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use anyhow::Context;
 use deckard_audio::AudioOutput;
 use deckard_core::Core;
-use deckard_input::Input;
+use deckard_input::{Hotkeys, Input};
+use deckard_library::{StateSlots, state_path};
 use deckard_video::{Presented, Renderer};
 use winit::application::ApplicationHandler;
 use winit::dpi::LogicalSize;
@@ -26,6 +28,20 @@ pub struct Options {
     pub max_frames: Option<u64>,
 }
 
+/// What is being played, for save state file names.
+pub struct Session {
+    pub system_id: String,
+    pub game_stem: String,
+    pub states_dir: PathBuf,
+    pub state_slots: u8,
+}
+
+impl Session {
+    fn state_path(&self, slot: u8) -> PathBuf {
+        state_path(&self.states_dir, &self.system_id, &self.game_stem, slot)
+    }
+}
+
 struct Running {
     window: Arc<Window>,
     renderer: Renderer,
@@ -34,6 +50,8 @@ struct Running {
 struct App {
     core: Core,
     options: Options,
+    session: Session,
+    slots: StateSlots,
     input: Input,
     audio: Option<AudioOutput>,
     pacer: Pacer,
@@ -44,8 +62,8 @@ struct App {
     error: Option<anyhow::Error>,
 }
 
-/// Runs the core in a window until the user quits.
-pub fn run(core: Core, options: Options) -> anyhow::Result<()> {
+/// Runs the core in a window until the user quits, then hands it back.
+pub fn run(core: Core, options: Options, session: Session) -> anyhow::Result<Core> {
     let event_loop = EventLoop::new().context("cannot create the event loop")?;
     event_loop.set_control_flow(ControlFlow::Poll);
 
@@ -60,6 +78,8 @@ pub fn run(core: Core, options: Options) -> anyhow::Result<()> {
     let mut app = App {
         core,
         options,
+        slots: StateSlots::new(session.state_slots),
+        session,
         input: Input::new(),
         audio,
         pacer,
@@ -79,7 +99,10 @@ pub fn run(core: Core, options: Options) -> anyhow::Result<()> {
             "session ended"
         );
     }
-    app.error.map_or(Ok(()), Err)
+    match app.error {
+        Some(e) => Err(e),
+        None => Ok(app.core),
+    }
 }
 
 impl App {
@@ -115,6 +138,27 @@ impl App {
         Ok(())
     }
 
+    /// Save state keys. Failures are logged, never fatal: the game keeps running.
+    fn handle_state_hotkeys(&mut self, hotkeys: Hotkeys) {
+        if hotkeys.next_slot {
+            tracing::info!(slot = self.slots.select_next(), "state slot");
+        }
+        if hotkeys.previous_slot {
+            tracing::info!(slot = self.slots.select_previous(), "state slot");
+        }
+        let path = self.session.state_path(self.slots.current());
+        if hotkeys.save_state
+            && let Err(e) = self.core.save_state_to(&path)
+        {
+            tracing::error!("cannot save state: {e}");
+        }
+        if hotkeys.load_state
+            && let Err(e) = self.core.load_state_from(&path)
+        {
+            tracing::error!("cannot load state: {e}");
+        }
+    }
+
     fn fail(&mut self, event_loop: &ActiveEventLoop, error: anyhow::Error) {
         self.error = Some(error);
         event_loop.exit();
@@ -125,10 +169,12 @@ impl App {
         for (port, pad) in self.input.poll().into_iter().enumerate() {
             self.core.set_pad(port, pad);
         }
-        if self.input.take_hotkeys().quit {
+        let hotkeys = self.input.take_hotkeys();
+        if hotkeys.quit {
             event_loop.exit();
             return;
         }
+        self.handle_state_hotkeys(hotkeys);
 
         let due = self.pacer.frames_due(Instant::now());
         for _ in 0..due {

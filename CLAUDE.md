@@ -38,12 +38,12 @@ Registra ogni nuova decisione architetturale in `docs/decisions/` (formato ADR b
 
 ## 3. Struttura del repository (prevista) `[CONDIVISO]`
 
-Esistono già (Fasi 0–1): `libretro-sys`, `deckard-core`, `deckard-video`,
-`deckard-audio`, `deckard-input`, `deckard-test-core`, `deckard`, la CI in
-`.github/workflows/ci.yml` e `docs/decisions/`. Gli altri crate e cartelle
-(`deckard-ui`, `deckard-library`, `deckard-config`, `deckard-system`, `os/`,
-`packages/`, `session/`, `scripts/`) sono previsti: creali nella fase in cui
-servono, non prima. Aggiorna questa sezione quando la struttura cambia.
+Esistono già (Fasi 0–2a): `libretro-sys`, `deckard-core`, `deckard-video`,
+`deckard-audio`, `deckard-input`, `deckard-config`, `deckard-library`,
+`deckard-test-core`, `deckard`, la CI in `.github/workflows/ci.yml` e
+`docs/decisions/`. Gli altri crate e cartelle (`deckard-ui`, `deckard-system`,
+`os/`, `packages/`, `session/`, `scripts/`) sono previsti: creali nella fase in
+cui servono, non prima. Aggiorna questa sezione quando la struttura cambia.
 
 ```
 Deckard/
@@ -60,8 +60,8 @@ Deckard/
 │       ├── deckard-input/     # gamepad (gilrs) + tastiera → RetroPad, hotkey
 │       ├── deckard-test-core/ # core libretro minimale in Rust, usato solo nei test
 │       ├── deckard-ui/        # menu XMB, temi, font, animazioni
-│       ├── deckard-library/   # scansione ROM, playlist, database, copertine
-│       ├── deckard-config/    # configurazione utente (TOML) e opzioni dei core
+│       ├── deckard-library/   # scansione roms/<sistema>/, titoli, copertine, nomi dei save state
+│       ├── deckard-config/    # config.toml (cartelle, sistemi, video) e opzioni salvate dei core
 │       ├── deckard-system/    # integrazione OS: batteria, luminosità, Wi-Fi, cambio sessione
 │       └── deckard/           # binario principale
 ├── os/
@@ -77,9 +77,11 @@ Deckard/
 ## 4. Architettura del frontend Rust `[CONDIVISO]`
 
 ### 4.1 Flusso principale
-1. `deckard` avvia winit + wgpu e mostra il menu XMB (`deckard-ui`, Fase 2).
-   Oggi (Fase 1) il core e la ROM si passano da riga di comando.
-2. L'utente sceglie un gioco → `deckard-library` risolve core + ROM (Fase 2).
+1. `deckard` carica `config.toml` (`deckard-config`), risolve le cartelle e
+   mostra il menu XMB (`deckard-ui`, Fase 2b). Oggi si avvia da riga di comando.
+2. Il gioco scelto (oggi `--rom`) determina il sistema — prima dalla cartella
+   sotto `roms/`, poi dall'estensione (`Config::system_for`) — e quindi il core
+   (`snes9x` → `<cores>/snes9x_libretro.so`). `deckard-library` elenca i giochi.
 3. `deckard-core` (`Core::load`) carica il core con `libloading`, verifica
    `retro_api_version() == 1`, registra le callback, chiama `retro_init`;
    `Core::load_game` chiama `retro_load_game` e carica la SRAM.
@@ -87,7 +89,26 @@ Deckard/
    input → `Core::run_frame` (quante volte dice `pacing.rs`) → audio a
    `deckard-audio` → ultimo frame a `deckard-video` → presentazione con vsync.
 5. Hotkey (es. `…` + `A`) apre il menu rapido in sovrimpressione: salva/carica stato,
-   opzioni del core, esci (Fase 2). Oggi: `Esc` o il tasto Guide/Steam escono.
+   opzioni del core, esci (Fase 2c). Oggi: `Esc` o il tasto Guide/Steam escono,
+   `F2`/`F4` salvano/caricano lo stato, `F6`/`F7` cambiano slot.
+6. All'uscita la SRAM viene salvata (`Drop` di `Core`) e le opzioni del core
+   diverse dal default vanno in `<core-options>/<core>.toml`; i valori passati
+   con `-o` valgono solo per quella sessione e non vengono salvati.
+
+### 4.1b Configurazione e libreria (ADR 0003)
+- `config.toml` in `<config dir>/deckard/` (Linux: `~/.config/deckard/`); se
+  manca viene creato con i default. I percorsi relativi sono dentro
+  `<data dir>/deckard/` (Linux: `~/.local/share/deckard/`): `roms/`, `cores/`,
+  `system/`, `saves/`, `states/`, `thumbnails/`, `core-options/`.
+- Sistemi: tabelle `[[system]]` con `id`, `name`, `core`, `extensions`,
+  `folder` opzionale (default = `id`). Se il file ne definisce, sostituiscono i
+  default (NES, SNES, GB, GBC, GBA, Mega Drive, PlayStation).
+- Giochi: `roms/<cartella>/` fino a 3 livelli di profondità, file nascosti
+  esclusi, ordinati per titolo; titolo = nome del file senza estensione.
+- Copertine: `thumbnails/<id>/<nome file>.png` oppure
+  `thumbnails/<id>/Named_Boxarts/<titolo>.png` (convenzione libretro-thumbnails).
+- Save state: `states/<id sistema>/<nome file>.state` (slot 0) o `.stateN`;
+  SRAM: `saves/<nome file>.srm`. Scritture atomiche (file temporaneo + rename).
 
 ### 4.2 Regole FFI libretro (importanti)
 - Le callback libretro sono `extern "C"` senza puntatore di contesto: usa **un
@@ -151,8 +172,9 @@ Comandi non gestiti: restituire `false` e loggare una volta sola a livello `debu
 - Porta 0 = tastiera + primo gamepad uniti; porte 1–3 = gamepad successivi.
   Layout RetroPad stile Nintendo (B = tasto in basso, A = a destra).
 - Tastiera (sviluppo su desktop): frecce, `X`=A, `Z`=B, `S`=X, `A`=Y, `Q`/`W`=L/R,
-  `1`/`2`=L2/R2, `Invio`=Start, `Shift destro`=Select, `Esc`=esci.
-- Le mappature configurabili andranno in `deckard-config` (Fase 2); i trackpad
+  `1`/`2`=L2/R2, `Invio`=Start, `Shift destro`=Select, `Esc`=esci, `F2`/`F4`
+  salva/carica stato, `F6`/`F7` slot precedente/successivo (come RetroArch).
+- Le mappature configurabili andranno in `deckard-config` (fase successiva); i trackpad
   (mouse/lightgun) sono una fase successiva.
 
 ## 5. Sistema operativo (archiso) `[CONDIVISO]`
@@ -190,16 +212,21 @@ Lo sviluppatore lavora su **Windows 11**. Quindi:
 Comandi (da `frontend/`):
 ```bash
 cargo build                      # build debug
-cargo run -p deckard -- --core <percorso_core> --rom <percorso_rom>   # avvio diretto di un gioco
+cargo run -p deckard -- --list                  # mostra configurazione e libreria
+cargo run -p deckard -- --rom <percorso_rom>     # core scelto dalla configurazione
+cargo run -p deckard -- --core <percorso_core> --rom <percorso_rom>   # core esplicito
 cargo build -p deckard-test-core && cargo run -p deckard -- --core target/debug/deckard_test_core.dll   # prova senza ROM (su Linux: libdeckard_test_core.so)
 cargo test --workspace
 cargo clippy --workspace --all-targets -- -D warnings
 cargo fmt --all
 ```
-Opzioni utili di `deckard`: `-o chiave=valore` (opzione del core, ripetibile),
-`--fullscreen`, `--system-dir`, `--save-dir` (predefiniti in
-`<data dir>/deckard/`), `--max-frames N` (nascosta: esce dopo N frame, per
-verifiche automatiche). Log: `RUST_LOG=debug`; i messaggi dei core hanno target `core`.
+Opzioni utili di `deckard`: `--config <file>` e `--data-dir <dir>` (utili per
+prove in cartelle temporanee), `-o chiave=valore` (opzione del core solo per
+quella sessione, ripetibile), `--fullscreen` / `--windowed`, `--system-dir`,
+`--save-dir`, `--max-frames N` (nascosta: esce dopo N frame, per verifiche
+automatiche). Log: `RUST_LOG=debug`; i messaggi dei core hanno target `core`.
+Per provare il core di test via configurazione, copialo in `cores/` come
+`deckard_test_core_libretro.dll` (convenzione `<nome>_libretro`).
 
 Su Linux la build richiede `libasound2-dev` (ALSA) e `libudev-dev` (gilrs).
 Sul portatile di sviluppo il driver Vulkan della Intel UHD va in crash in
@@ -220,7 +247,8 @@ Se aggiungi o cambi comandi, aggiorna questa sezione.
 - Errori: `thiserror` nei crate di libreria, `anyhow` solo nel binario `deckard`.
   Nessun `unwrap()`/`expect()` nel codice di produzione, salvo invarianti
   documentate.
-- Logging con `tracing`. Niente `println!` nel codice finale.
+- Logging con `tracing`. `println!` solo per l'output richiesto da un comando
+  (es. `--list`), mai per log.
 - Dipendenze: preferire crate maturi e mantenuti; ogni nuova dipendenza va
   motivata nel messaggio di commit. Verificare la compatibilità di licenza con GPL-3.0.
 - Test: unità per parsing/config/library; integrazione con il core di test
@@ -256,7 +284,13 @@ Se aggiungi o cambi comandi, aggiorna questa sezione.
 2. **Fase 1** ✅ — Avvio di un core software da riga di comando (video+audio+input), su desktop.
    Verificata su Windows con il core di test; su Linux la verifica è affidata alla CI,
    e manca ancora la prova con un core reale (es. snes9x).
-3. **Fase 2** — Menu XMB, libreria ROM, configurazione, save state.
+3. **Fase 2** — Menu XMB, libreria ROM, configurazione, save state. In tre tappe:
+   - **2a** ✅ configurazione (`deckard-config`), libreria (`deckard-library`),
+     save state su file con slot, scelta del core dalla ROM, `--list`;
+   - **2b** menu XMB disegnato con wgpu + glyphon (font OFL, es. Inter), navigazione
+     come macchina a stati testata, avvio di un gioco e ritorno al menu;
+   - **2c** menu rapido in gioco (Guide/Steam o `F1`), opzioni del core dal menu,
+     impostazioni video (scala intera, filtro). Copertine solo locali.
 4. **Fase 3** — Profilo archiso avviabile su Steam Deck LCD con Deckard in autostart.
 5. **Fase 4** — Dual mode con Steam/gamescope e cambio sessione.
 6. **Fase 5** — Core hardware (Vulkan, poi GL), shader, menu rapido completo, installer.

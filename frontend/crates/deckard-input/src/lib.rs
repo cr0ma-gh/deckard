@@ -12,6 +12,10 @@ use winit::keyboard::KeyCode;
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct Hotkeys {
     pub quit: bool,
+    pub save_state: bool,
+    pub load_state: bool,
+    pub next_slot: bool,
+    pub previous_slot: bool,
 }
 
 /// Collects keyboard and gamepad state.
@@ -50,8 +54,16 @@ impl Input {
 
     /// Feeds a keyboard event from the window.
     pub fn handle_key(&mut self, key: KeyCode, pressed: bool) {
-        if key == KeyCode::Escape && pressed {
-            self.hotkeys.quit = true;
+        if pressed {
+            // Same keys as RetroArch's defaults.
+            match key {
+                KeyCode::Escape => self.hotkeys.quit = true,
+                KeyCode::F2 => self.hotkeys.save_state = true,
+                KeyCode::F4 => self.hotkeys.load_state = true,
+                KeyCode::F6 => self.hotkeys.previous_slot = true,
+                KeyCode::F7 => self.hotkeys.next_slot = true,
+                _ => {}
+            }
         }
         if let Some(button) = keyboard_button(key) {
             self.keyboard.set(button, pressed);
@@ -189,6 +201,12 @@ mod tests {
         input.handle_key(KeyCode::Escape, true);
         assert!(input.take_hotkeys().quit);
         assert!(!input.take_hotkeys().quit, "hotkeys are one-shot");
+
+        input.handle_key(KeyCode::F2, true);
+        input.handle_key(KeyCode::F7, true);
+        input.handle_key(KeyCode::F4, false); // release does nothing
+        let hk = input.take_hotkeys();
+        assert!(hk.save_state && hk.next_slot && !hk.load_state && !hk.previous_slot);
     }
 
     #[test]

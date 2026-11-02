@@ -68,6 +68,14 @@ impl CoreOptions {
         true
     }
 
+    /// Options whose value differs from the core's default, as `(key, value)`.
+    pub fn changed(&self) -> impl Iterator<Item = (&str, &str)> {
+        self.list
+            .iter()
+            .filter(|o| o.value() != o.default)
+            .map(|o| (o.key.as_str(), o.value()))
+    }
+
     /// Returns whether any value changed since the last call, and clears the flag.
     pub fn take_updated(&mut self) -> bool {
         std::mem::take(&mut self.updated)

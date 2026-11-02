@@ -9,8 +9,10 @@ publish.workspace = true
 
 [dependencies]
 deckard-audio.workspace = true
+deckard-config.workspace = true
 deckard-core.workspace = true
 deckard-input.workspace = true
+deckard-library.workspace = true
 deckard-video.workspace = true
 anyhow.workspace = true
 clap.workspace = true

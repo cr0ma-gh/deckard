@@ -4,9 +4,9 @@ Distribuzione Linux per **Steam Deck LCD**, basata su Arch Linux, con un fronten
 libretro nativo scritto in Rust e un'interfaccia a menu in stile XMB.
 Funziona in dual mode: modalità Deckard (emulazione) e modalità Steam.
 
-> Stato: **Fase 1** — il frontend avvia un core libretro software da riga di
-> comando, con video, audio e input. Il menu e l'immagine del sistema arrivano
-> nelle fasi successive.
+> Stato: **Fase 2a** — il frontend avvia giochi da riga di comando, con video,
+> audio, input, salvataggi e save state, leggendo configurazione e libreria.
+> Il menu XMB arriva nella tappa 2b.
 
 ## Struttura
 
@@ -17,6 +17,8 @@ Funziona in dual mode: modalità Deckard (emulazione) e modalità Steam.
 | `frontend/crates/deckard-video/` | Output video con wgpu |
 | `frontend/crates/deckard-audio/` | Output audio, ricampionamento, controllo dinamico della frequenza |
 | `frontend/crates/deckard-input/` | Gamepad e tastiera → RetroPad |
+| `frontend/crates/deckard-config/` | Configurazione (`config.toml`) e opzioni salvate dei core |
+| `frontend/crates/deckard-library/` | Libreria giochi: cartelle per sistema, titoli, copertine |
 | `frontend/crates/deckard-test-core/` | Core libretro minimale usato nei test |
 | `frontend/crates/deckard/` | Binario principale |
 | `docs/decisions/` | Decisioni architetturali (ADR) |
@@ -32,10 +34,25 @@ cargo run -p deckard -- --core target/debug/deckard_test_core.dll
 ```
 
 Su Linux il core di test si chiama `target/debug/libdeckard_test_core.so`.
-Con un core reale: `--core <core> --rom <rom>`.
+
+### Con i tuoi giochi
+
+Al primo avvio Deckard crea `config.toml` (Windows: `%APPDATA%\deckard\`,
+Linux: `~/.config/deckard/`) e le cartelle dei dati (Windows:
+`%APPDATA%\deckard\`, Linux: `~/.local/share/deckard/`):
+
+- metti i core libretro in `cores/` (es. `snes9x_libretro.dll` / `.so`);
+- metti i giochi in `roms/<sistema>/` (es. `roms/snes/`);
+- le copertine opzionali in `thumbnails/<sistema>/<nome del file>.png`.
+
+```bash
+cargo run -p deckard -- --list                 # cosa vede Deckard
+cargo run -p deckard -- --rom <percorso_rom>   # il core si sceglie da solo
+```
 
 Comandi: frecce = croce direzionale, `X` = A (con il core di test suona un tono),
-`Esc` = esci. Opzioni dei core: `-o chiave=valore`.
+`F2`/`F4` = salva/carica stato, `F6`/`F7` = cambia slot, `Esc` = esci.
+Opzioni dei core per una sola sessione: `-o chiave=valore`.
 
 ## Sviluppo
 
