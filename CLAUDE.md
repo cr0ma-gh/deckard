@@ -38,12 +38,13 @@ Registra ogni nuova decisione architetturale in `docs/decisions/` (formato ADR b
 
 ## 3. Struttura del repository (prevista) `[CONDIVISO]`
 
-Esistono già (Fasi 0–2a): `libretro-sys`, `deckard-core`, `deckard-video`,
+Esistono già (Fasi 0–2b): `libretro-sys`, `deckard-core`, `deckard-video`,
 `deckard-audio`, `deckard-input`, `deckard-config`, `deckard-library`,
-`deckard-test-core`, `deckard`, la CI in `.github/workflows/ci.yml` e
-`docs/decisions/`. Gli altri crate e cartelle (`deckard-ui`, `deckard-system`,
-`os/`, `packages/`, `session/`, `scripts/`) sono previsti: creali nella fase in
-cui servono, non prima. Aggiorna questa sezione quando la struttura cambia.
+`deckard-ui`, `deckard-test-core`, `deckard`, la CI in
+`.github/workflows/ci.yml` e `docs/decisions/`. Gli altri crate e cartelle
+(`deckard-system`, `os/`, `packages/`, `session/`, `scripts/`) sono previsti:
+creali nella fase in cui servono, non prima. Aggiorna questa sezione quando la
+struttura cambia.
 
 ```
 Deckard/
@@ -59,7 +60,7 @@ Deckard/
 │       ├── deckard-audio/     # output audio (cpal), resampling, controllo dinamico del rate
 │       ├── deckard-input/     # gamepad (gilrs) + tastiera → RetroPad, hotkey
 │       ├── deckard-test-core/ # core libretro minimale in Rust, usato solo nei test
-│       ├── deckard-ui/        # menu XMB, temi, font, animazioni
+│       ├── deckard-ui/        # menu XMB: nav, layout, traduzioni, renderer (assets/: font, i18n)
 │       ├── deckard-library/   # scansione roms/<sistema>/, titoli, copertine, nomi dei save state
 │       ├── deckard-config/    # config.toml (cartelle, sistemi, video) e opzioni salvate dei core
 │       ├── deckard-system/    # integrazione OS: batteria, luminosità, Wi-Fi, cambio sessione
@@ -77,20 +78,25 @@ Deckard/
 ## 4. Architettura del frontend Rust `[CONDIVISO]`
 
 ### 4.1 Flusso principale
-1. `deckard` carica `config.toml` (`deckard-config`), risolve le cartelle e
-   mostra il menu XMB (`deckard-ui`, Fase 2b). Oggi si avvia da riga di comando.
-2. Il gioco scelto (oggi `--rom`) determina il sistema — prima dalla cartella
-   sotto `roms/`, poi dall'estensione (`Config::system_for`) — e quindi il core
-   (`snes9x` → `<cores>/snes9x_libretro.so`). `deckard-library` elenca i giochi.
+1. `deckard` carica `config.toml` (`deckard-config`), risolve le cartelle,
+   scansiona la libreria (`deckard-library`) e mostra il menu XMB
+   (`deckard-ui`). Con `--rom`/`--core` salta il menu e avvia subito il gioco,
+   uscendo quando il gioco finisce.
+2. Dal menu il gioco porta con sé sistema e core; da riga di comando il sistema
+   si ricava dalla cartella sotto `roms/`, poi dall'estensione
+   (`Config::system_for`), e da lì il core (`snes9x` → `<cores>/snes9x_libretro.so`).
+   L'avvio passa da `deckard/src/launcher.rs` (`Game::start` / `Game::finish`).
 3. `deckard-core` (`Core::load`) carica il core con `libloading`, verifica
    `retro_api_version() == 1`, registra le callback, chiama `retro_init`;
    `Core::load_game` chiama `retro_load_game` e carica la SRAM.
-4. Ciclo principale (`deckard/src/app.rs`, thread principale dentro winit):
-   input → `Core::run_frame` (quante volte dice `pacing.rs`) → audio a
-   `deckard-audio` → ultimo frame a `deckard-video` → presentazione con vsync.
-5. Hotkey (es. `…` + `A`) apre il menu rapido in sovrimpressione: salva/carica stato,
-   opzioni del core, esci (Fase 2c). Oggi: `Esc` o il tasto Guide/Steam escono,
-   `F2`/`F4` salvano/caricano lo stato, `F6`/`F7` cambiano slot.
+4. Ciclo principale (`deckard/src/app.rs`, thread principale dentro winit), due
+   modalità: **Menu** (input → `Repeater` → `Menu::handle` → `layout` →
+   `UiRenderer`) e **Gioco** (input → `Core::run_frame` quante volte dice
+   `pacing.rs` → audio a `deckard-audio` → frame a `deckard-video`). Entrambe
+   presentano con vsync; il menu è un `Overlay` disegnato nel pass del video.
+5. Hotkey: il menu rapido in sovrimpressione arriva in Fase 2c. Oggi `Esc`, il
+   tasto Guide/Steam o `F1` chiudono il gioco e tornano al menu; `F2`/`F4`
+   salvano/caricano lo stato, `F6`/`F7` cambiano slot.
 6. All'uscita la SRAM viene salvata (`Drop` di `Core`) e le opzioni del core
    diverse dal default vanno in `<core-options>/<core>.toml`; i valori passati
    con `-o` valgono solo per quella sessione e non vengono salvati.
@@ -109,6 +115,25 @@ Deckard/
   `thumbnails/<id>/Named_Boxarts/<titolo>.png` (convenzione libretro-thumbnails).
 - Save state: `states/<id sistema>/<nome file>.state` (slot 0) o `.stateN`;
   SRAM: `saves/<nome file>.srm`. Scritture atomiche (file temporaneo + rename).
+- Lingua dell'interfaccia: `language = "it"` o `"en"` (default `"en"`).
+
+### 4.1c Menu XMB (ADR 0004)
+- `deckard-ui` separa la logica dal disegno: `nav.rs` (modello e navigazione,
+  pura), `repeat.rs` (tasti tenuti → passi, con ripetizione), `layout.rs`
+  (stato + animazioni → `Scene` di rettangoli, testi e immagini; geometria per
+  1280×800 scalata sull'altezza), `i18n.rs` (testi), `render/` (wgpu + glyphon).
+  Le modifiche al comportamento vanno in `nav`/`layout` e si testano lì; il
+  renderer si verifica con screenshot.
+- Categorie: Impostazioni (Ricarica libreria, Esci) poi un sistema per ogni
+  cartella con giochi; senza giochi compare una voce che indica la cartella ROM.
+  Un gioco senza core mostra "Core mancante" invece di avviarsi.
+- Font: **Inter** (licenza OFL, `deckard-ui/assets/fonts/`, con `OFL.txt`),
+  unico font caricato: aspetto identico ovunque. Icone disegnate con forme e
+  sigle, nessun asset di terzi.
+- Copertine: decodificate in un thread separato (`render/thumbs.rs`), al
+  massimo 24 sulla GPU.
+- Testi: ogni stringa visibile sta in `deckard-ui/assets/i18n/{en,it}.toml`; un
+  test verifica che i file abbiano le stesse chiavi e gli stessi segnaposto.
 
 ### 4.2 Regole FFI libretro (importanti)
 - Le callback libretro sono `extern "C"` senza puntatore di contesto: usa **un
@@ -171,6 +196,13 @@ Comandi non gestiti: restituire `false` e loggare una volta sola a livello `debu
   `hid-steam` come gamepad evdev. Con Steam attivo, Steam li gestisce.
 - Porta 0 = tastiera + primo gamepad uniti; porte 1–3 = gamepad successivi.
   Layout RetroPad stile Nintendo (B = tasto in basso, A = a destra).
+- Menu: conferma = tasto in basso (A sul Deck, RetroPad B), indietro = tasto a
+  destra; croce, stick sinistro o frecce per muoversi. Tastiera: `Invio`/`Z`
+  conferma, `Backspace`/`Esc`/`X` indietro. Le pressioni sono "memorizzate"
+  fino al frame successivo: anche un tocco brevissimo conta.
+- I tasti di navigazione si leggono dal loro significato (`key_code` in
+  `deckard-input`), gli altri dalla posizione fisica: così le frecce del
+  tastierino numerico funzionano e i tasti dei giochi non dipendono dal layout.
 - Tastiera (sviluppo su desktop): frecce, `X`=A, `Z`=B, `S`=X, `A`=Y, `Q`/`W`=L/R,
   `1`/`2`=L2/R2, `Invio`=Start, `Shift destro`=Select, `Esc`=esci, `F2`/`F4`
   salva/carica stato, `F6`/`F7` slot precedente/successivo (come RetroArch).
@@ -212,6 +244,7 @@ Lo sviluppatore lavora su **Windows 11**. Quindi:
 Comandi (da `frontend/`):
 ```bash
 cargo build                      # build debug
+cargo run -p deckard                            # apre il menu
 cargo run -p deckard -- --list                  # mostra configurazione e libreria
 cargo run -p deckard -- --rom <percorso_rom>     # core scelto dalla configurazione
 cargo run -p deckard -- --core <percorso_core> --rom <percorso_rom>   # core esplicito
@@ -223,8 +256,16 @@ cargo fmt --all
 Opzioni utili di `deckard`: `--config <file>` e `--data-dir <dir>` (utili per
 prove in cartelle temporanee), `-o chiave=valore` (opzione del core solo per
 quella sessione, ripetibile), `--fullscreen` / `--windowed`, `--system-dir`,
-`--save-dir`, `--max-frames N` (nascosta: esce dopo N frame, per verifiche
-automatiche). Log: `RUST_LOG=debug`; i messaggi dei core hanno target `core`.
+`--save-dir`, `--max-frames N` (nascosta: esce dopo N frame — emulati nel
+gioco, presentati nel menu — per verifiche automatiche). Log: `RUST_LOG=debug`;
+i messaggi dei core hanno target `core`.
+
+Verifica visiva su Windows: avviare `deckard.exe` con `Start-Process`, portare la
+finestra in primo piano (`SetForegroundWindow`), inviare tasti con
+`System.Windows.Forms.SendKeys` e catturare la finestra con
+`Graphics.CopyFromScreen`; usare una cartella temporanea con `--config` e
+`--data-dir`. Attenzione: in PowerShell le variabili non distinguono
+maiuscole/minuscole (`$d` e `$D` sono la stessa variabile).
 Per provare il core di test via configurazione, copialo in `cores/` come
 `deckard_test_core_libretro.dll` (convenzione `<nome>_libretro`).
 
@@ -287,8 +328,8 @@ Se aggiungi o cambi comandi, aggiorna questa sezione.
 3. **Fase 2** — Menu XMB, libreria ROM, configurazione, save state. In tre tappe:
    - **2a** ✅ configurazione (`deckard-config`), libreria (`deckard-library`),
      save state su file con slot, scelta del core dalla ROM, `--list`;
-   - **2b** menu XMB disegnato con wgpu + glyphon (font OFL, es. Inter), navigazione
-     come macchina a stati testata, avvio di un gioco e ritorno al menu;
+   - **2b** ✅ menu XMB disegnato con wgpu + glyphon (font Inter, OFL), navigazione
+     come macchina a stati testata, copertine, avvio di un gioco e ritorno al menu;
    - **2c** menu rapido in gioco (Guide/Steam o `F1`), opzioni del core dal menu,
      impostazioni video (scala intera, filtro). Copertine solo locali.
 4. **Fase 3** — Profilo archiso avviabile su Steam Deck LCD con Deckard in autostart.

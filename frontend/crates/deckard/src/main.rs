@@ -1,24 +1,26 @@
 //! Deckard: libretro frontend for Steam Deck.
 
 mod app;
+mod launcher;
 mod pacing;
 
-use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
-use anyhow::{Context, bail};
+use anyhow::bail;
 use clap::Parser;
-use deckard_config::{Config, CoreOptionsStore};
-use deckard_core::{Core, CoreConfig};
+use deckard_config::Config;
 use deckard_library::Library;
 use tracing_subscriber::EnvFilter;
 
-/// Command line arguments.
+use crate::launcher::{Game, LaunchRequest};
+
+/// Command line arguments. Without --rom or --core, Deckard opens the menu.
 #[derive(Debug, Parser)]
 #[command(version, about)]
 struct Args {
-    /// Content (ROM) to play. The core is chosen from the configured systems
-    /// (by folder under the ROM directory, then by extension) unless --core is given.
+    /// Content (ROM) to play directly. The core is chosen from the configured
+    /// systems (by folder under the ROM directory, then by extension) unless
+    /// --core is given. Deckard quits when the game ends.
     #[arg(long)]
     rom: Option<PathBuf>,
 
@@ -60,7 +62,7 @@ struct Args {
     #[arg(long)]
     windowed: bool,
 
-    /// Quit after this many emulated frames (for automated checks).
+    /// Quit after this many frames (for automated checks).
     #[arg(long, hide = true)]
     max_frames: Option<u64>,
 }
@@ -70,15 +72,6 @@ fn parse_option(s: &str) -> Result<(String, String), String> {
         .filter(|(k, _)| !k.is_empty())
         .map(|(k, v)| (k.to_owned(), v.to_owned()))
         .ok_or_else(|| format!("expected key=value, got '{s}'"))
-}
-
-/// Name used for a core's saved options: `snes9x_libretro.so` → `snes9x`.
-fn core_name(path: &Path) -> String {
-    let stem = path
-        .file_stem()
-        .map_or_else(String::new, |s| s.to_string_lossy().into_owned());
-    stem.strip_suffix("_libretro")
-        .map_or(stem.clone(), str::to_owned)
 }
 
 fn print_library(library: &Library, config_path: &Path, roms: &Path) {
@@ -126,102 +119,60 @@ fn main() -> anyhow::Result<()> {
         .data_dir
         .clone()
         .unwrap_or_else(Config::default_data_dir);
-    let paths = config.paths.resolve(&data_dir);
+    let mut paths = config.paths.resolve(&data_dir);
+    if let Some(dir) = &args.system_dir {
+        paths.system = dir.clone();
+    }
+    if let Some(dir) = &args.save_dir {
+        paths.saves = dir.clone();
+    }
     paths.create_all()?;
 
+    let library = Library::scan(&config, &paths);
     if args.list {
-        print_library(&Library::scan(&config, &paths), &config_path, &paths.roms);
+        print_library(&library, &config_path, &paths.roms);
         return Ok(());
     }
 
-    let system = args
-        .rom
-        .as_deref()
-        .and_then(|rom| config.system_for(rom, &paths.roms));
-    let core_path = match (&args.core, system) {
-        (Some(core), _) => core.clone(),
-        (None, Some(system)) => system.core_path(&paths.cores),
-        (None, None) if args.rom.is_some() => {
-            bail!(
-                "no configured system accepts this file; add one in {} or pass --core",
-                config_path.display()
-            )
-        }
-        (None, None) => bail!(
-            "nothing to play: the menu arrives in phase 2b; use --rom <file>, --core <file> or --list"
-        ),
-    };
-    if !core_path.is_file() {
-        bail!(
-            "core not found: {} (put libretro cores in {})",
-            core_path.display(),
-            paths.cores.display()
-        );
-    }
-
-    // Saved options, then this run's -o values on top (those are not saved).
-    let name = core_name(&core_path);
-    let store = CoreOptionsStore::new(&paths.core_options);
-    let saved = store.load(&name).unwrap_or_else(|e| {
-        tracing::warn!("ignoring saved core options: {e}");
-        Vec::new()
-    });
-    let cli_keys: HashSet<String> = args.options.iter().map(|(k, _)| k.clone()).collect();
-    let mut overrides: Vec<_> = saved
-        .iter()
-        .filter(|(k, _)| !cli_keys.contains(k))
-        .cloned()
-        .collect();
-    overrides.extend(args.options.iter().cloned());
-
-    let core_config = CoreConfig {
-        system_dir: args
-            .system_dir
-            .clone()
-            .unwrap_or_else(|| paths.system.clone()),
-        save_dir: args.save_dir.clone().unwrap_or_else(|| paths.saves.clone()),
-        option_overrides: overrides,
-    };
-    for dir in [&core_config.system_dir, &core_config.save_dir] {
-        std::fs::create_dir_all(dir).with_context(|| format!("cannot create {}", dir.display()))?;
-    }
-
-    let mut core = Core::load(&core_path, core_config)?;
-    core.load_game(args.rom.as_deref())?;
-
-    let session = app::Session {
-        system_id: system.map_or_else(|| name.clone(), |s| s.id.clone()),
-        game_stem: args
+    let direct = args.rom.is_some() || args.core.is_some();
+    let game = if direct {
+        let system = args
             .rom
             .as_deref()
-            .and_then(Path::file_stem)
-            .map_or_else(|| name.clone(), |s| s.to_string_lossy().into_owned()),
-        states_dir: paths.states.clone(),
-        state_slots: config.state_slots,
+            .and_then(|rom| config.system_for(rom, &paths.roms));
+        let core_path = match (&args.core, system) {
+            (Some(core), _) => core.clone(),
+            (None, Some(system)) => system.core_path(&paths.cores),
+            (None, None) => bail!(
+                "no configured system accepts this file; add one in {} or pass --core",
+                config_path.display()
+            ),
+        };
+        let request = LaunchRequest {
+            core_path,
+            rom: args.rom.clone(),
+            system_id: system.map(|s| s.id.clone()),
+            cli_options: args.options.clone(),
+        };
+        Some(Game::start(request, &config, &paths)?)
+    } else {
+        None
     };
+
     let options = app::Options {
         fullscreen: args.fullscreen || (config.video.fullscreen && !args.windowed),
         max_frames: args.max_frames,
+        quit_after_game: direct,
     };
-    let core = app::run(core, options, session)?;
-
-    // Keep values changed during the session; -o values stay out, and any
-    // previously saved value for those keys is kept as it was.
-    let mut to_save: Vec<(&str, &str)> = core
-        .options()
-        .changed()
-        .filter(|(k, _)| !cli_keys.contains(*k))
-        .collect();
-    to_save.extend(
-        saved
-            .iter()
-            .filter(|(k, _)| cli_keys.contains(k))
-            .map(|(k, v)| (k.as_str(), v.as_str())),
-    );
-    if let Err(e) = store.save(&name, to_save) {
-        tracing::warn!("cannot save core options: {e}");
-    }
-    Ok(())
+    app::run(
+        app::Context {
+            config,
+            paths,
+            library,
+        },
+        game,
+        options,
+    )
 }
 
 #[cfg(test)]
@@ -234,15 +185,6 @@ mod tests {
         assert_eq!(parse_option("a=b=c"), Ok(("a".into(), "b=c".into())));
         assert!(parse_option("=b").is_err());
         assert!(parse_option("nokey").is_err());
-    }
-
-    #[test]
-    fn core_names() {
-        assert_eq!(core_name(Path::new("cores/snes9x_libretro.so")), "snes9x");
-        assert_eq!(
-            core_name(Path::new("deckard_test_core.dll")),
-            "deckard_test_core"
-        );
     }
 
     #[test]

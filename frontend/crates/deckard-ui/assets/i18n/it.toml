@@ -1,0 +1,17 @@
+# Testi dell'interfaccia di Deckard (italiano).
+# I segnaposto tra graffe vengono sostituiti durante l'esecuzione.
+
+settings = "Impostazioni"
+games = "Giochi"
+rescan = "Ricarica libreria"
+rescan_info = "Cerca nuovi giochi nelle cartelle delle ROM"
+quit = "Esci da Deckard"
+quit_info = "Chiudi l'applicazione"
+no_games = "Nessun gioco trovato"
+no_games_info = "Metti i giochi in {path}"
+game_count = "{count} giochi"
+core_missing = "Core mancante: {core}"
+launch_failed = "Impossibile avviare il gioco: {error}"
+library_updated = "Libreria aggiornata: {count} giochi"
+hint_confirm = "Conferma"
+hint_back = "Indietro"

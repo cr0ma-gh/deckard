@@ -187,6 +187,8 @@ impl Default for VideoConfig {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Config {
+    /// Interface language: `en` or `it`.
+    pub language: String,
     pub paths: Paths,
     pub video: VideoConfig,
     /// Number of save state slots per game.
@@ -198,6 +200,7 @@ pub struct Config {
 impl Default for Config {
     fn default() -> Self {
         Self {
+            language: "en".into(),
             paths: Paths::default(),
             video: VideoConfig::default(),
             state_slots: 10,

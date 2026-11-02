@@ -25,6 +25,25 @@ pub enum VideoError {
     UnsupportedSurface,
 }
 
+/// GPU access lent to overlays.
+#[derive(Clone, Copy)]
+pub struct Gpu<'a> {
+    pub device: &'a wgpu::Device,
+    pub queue: &'a wgpu::Queue,
+    /// Format of the window surface (the overlay's render target).
+    pub format: wgpu::TextureFormat,
+    pub width: u32,
+    pub height: u32,
+}
+
+/// Something drawn on top of the game frame, in the same render pass.
+pub trait Overlay {
+    /// Uploads buffers and textures for this frame (before the pass begins).
+    fn prepare(&mut self, gpu: &Gpu<'_>);
+    /// Records draw commands. The viewport covers the whole window.
+    fn draw(&self, pass: &mut wgpu::RenderPass<'_>);
+}
+
 /// Result of [`Renderer::render`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Presented {
@@ -266,9 +285,34 @@ impl Renderer {
         }
     }
 
-    /// Draws the last uploaded frame with the given display aspect ratio.
-    /// Blocks until the next vertical blank (Fifo presentation).
-    pub fn render(&mut self, aspect: f32) -> Presented {
+    /// GPU handles for code that draws on top of the game (the menu).
+    pub fn gpu(&self) -> Gpu<'_> {
+        Gpu {
+            device: &self.device,
+            queue: &self.queue,
+            format: self.config.format,
+            width: self.config.width,
+            height: self.config.height,
+        }
+    }
+
+    /// Forgets the last game frame (e.g. when a game is closed).
+    pub fn clear_frame(&mut self) {
+        self.frame = None;
+    }
+
+    /// Draws one frame: the last uploaded game frame (if `game_aspect` is
+    /// given) and then `overlay` on top. Blocks until the next vertical blank
+    /// (Fifo presentation).
+    pub fn render(
+        &mut self,
+        game_aspect: Option<f32>,
+        overlay: Option<&mut dyn Overlay>,
+    ) -> Presented {
+        let mut overlay = overlay;
+        if let Some(o) = overlay.as_deref_mut() {
+            o.prepare(&self.gpu());
+        }
         let surface_texture = match self.surface.get_current_texture() {
             wgpu::CurrentSurfaceTexture::Success(t) => t,
             wgpu::CurrentSurfaceTexture::Suboptimal(t) => {
@@ -313,7 +357,7 @@ impl Renderer {
                 occlusion_query_set: None,
                 multiview_mask: None,
             });
-            if let Some(frame) = &self.frame {
+            if let (Some(frame), Some(aspect)) = (&self.frame, game_aspect) {
                 let vp = fit_aspect(self.config.width, self.config.height, aspect);
                 if vp.width >= 1.0 && vp.height >= 1.0 {
                     pass.set_viewport(vp.x, vp.y, vp.width, vp.height, 0.0, 1.0);
@@ -321,6 +365,11 @@ impl Renderer {
                     pass.set_bind_group(0, &frame.bind_group, &[]);
                     pass.draw(0..3, 0..1);
                 }
+            }
+            if let Some(o) = overlay {
+                let (w, h) = (self.config.width as f32, self.config.height as f32);
+                pass.set_viewport(0.0, 0.0, w, h, 0.0, 1.0);
+                o.draw(&mut pass);
             }
         }
         self.queue.submit([encoder.finish()]);

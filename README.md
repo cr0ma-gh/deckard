@@ -4,9 +4,9 @@ Distribuzione Linux per **Steam Deck LCD**, basata su Arch Linux, con un fronten
 libretro nativo scritto in Rust e un'interfaccia a menu in stile XMB.
 Funziona in dual mode: modalità Deckard (emulazione) e modalità Steam.
 
-> Stato: **Fase 2a** — il frontend avvia giochi da riga di comando, con video,
-> audio, input, salvataggi e save state, leggendo configurazione e libreria.
-> Il menu XMB arriva nella tappa 2b.
+> Stato: **Fase 2b** — menu XMB con libreria, copertine e avvio dei giochi;
+> video, audio, input, salvataggi e save state. Il menu rapido durante il gioco
+> arriva nella tappa 2c, l'immagine del sistema nella Fase 3.
 
 ## Struttura
 
@@ -19,6 +19,7 @@ Funziona in dual mode: modalità Deckard (emulazione) e modalità Steam.
 | `frontend/crates/deckard-input/` | Gamepad e tastiera → RetroPad |
 | `frontend/crates/deckard-config/` | Configurazione (`config.toml`) e opzioni salvate dei core |
 | `frontend/crates/deckard-library/` | Libreria giochi: cartelle per sistema, titoli, copertine |
+| `frontend/crates/deckard-ui/` | Menu XMB: navigazione, layout, traduzioni, disegno |
 | `frontend/crates/deckard-test-core/` | Core libretro minimale usato nei test |
 | `frontend/crates/deckard/` | Binario principale |
 | `docs/decisions/` | Decisioni architetturali (ADR) |
@@ -46,13 +47,20 @@ Linux: `~/.config/deckard/`) e le cartelle dei dati (Windows:
 - le copertine opzionali in `thumbnails/<sistema>/<nome del file>.png`.
 
 ```bash
+cargo run -p deckard                           # apre il menu
 cargo run -p deckard -- --list                 # cosa vede Deckard
-cargo run -p deckard -- --rom <percorso_rom>   # il core si sceglie da solo
+cargo run -p deckard -- --rom <percorso_rom>   # avvia subito un gioco
 ```
 
-Comandi: frecce = croce direzionale, `X` = A (con il core di test suona un tono),
-`F2`/`F4` = salva/carica stato, `F6`/`F7` = cambia slot, `Esc` = esci.
-Opzioni dei core per una sola sessione: `-o chiave=valore`.
+Per l'interfaccia in italiano scrivi `language = "it"` in cima a `config.toml`.
+
+**Nel menu**: frecce (o croce/stick) per muoversi, `Invio` (o A sul gamepad)
+per confermare, `Backspace`/`Esc` (o B) per tornare indietro.
+
+**In gioco**: frecce = croce direzionale, `X` = A, `Z` = B, `Invio` = Start;
+`F2`/`F4` = salva/carica stato, `F6`/`F7` = cambia slot; `Esc` o il tasto
+Guide/Steam tornano al menu. Opzioni dei core per una sola sessione:
+`-o chiave=valore`.
 
 ## Sviluppo
 
@@ -77,3 +85,5 @@ dall'utente, nel rispetto delle leggi del proprio paese.
 GPL-3.0-or-later (vedi [LICENSE](LICENSE)).
 `frontend/crates/libretro-sys/include/libretro.h` è distribuito con la propria
 licenza MIT, riportata nell'intestazione del file.
+Il font Inter (`frontend/crates/deckard-ui/assets/fonts/`) è distribuito con
+la SIL Open Font License 1.1 (`OFL.txt` nella stessa cartella).

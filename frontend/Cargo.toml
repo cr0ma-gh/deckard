@@ -17,6 +17,7 @@ deckard-input = { path = "crates/deckard-input" }
 deckard-video = { path = "crates/deckard-video" }
 deckard-config = { path = "crates/deckard-config" }
 deckard-library = { path = "crates/deckard-library" }
+deckard-ui = { path = "crates/deckard-ui" }
 anyhow = "1"
 bytemuck = { version = "1", features = ["derive"] }
 cc = "1"
@@ -24,7 +25,9 @@ clap = { version = "4", features = ["derive"] }
 cpal = "0.18"
 dirs = "7"
 gilrs = "0.11"
+glyphon = "0.12"
 libloading = "0.9"
+png = "0.18"
 pollster = "1"
 rtrb = "0.4"
 serde = { version = "1", features = ["derive"] }

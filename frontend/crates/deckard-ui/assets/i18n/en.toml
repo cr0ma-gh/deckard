@@ -1,0 +1,17 @@
+# Deckard interface strings (English, the base language).
+# Placeholders in braces are replaced at runtime.
+
+settings = "Settings"
+games = "Games"
+rescan = "Rescan library"
+rescan_info = "Look for new games in the ROM folders"
+quit = "Quit Deckard"
+quit_info = "Close the application"
+no_games = "No games found"
+no_games_info = "Put games in {path}"
+game_count = "{count} games"
+core_missing = "Core missing: {core}"
+launch_failed = "Cannot start the game: {error}"
+library_updated = "Library updated: {count} games"
+hint_confirm = "Confirm"
+hint_back = "Back"
