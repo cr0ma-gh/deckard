@@ -1,0 +1,49 @@
+#!/usr/bin/env bash
+# Deckard session, started by greetd at boot (see os/archiso/airootfs/etc/greetd).
+#
+# On real hardware Deckard runs inside gamescope (the compositor SteamOS uses:
+# it handles the Deck's portrait panel, vsync and scaling). In virtual machines
+# there is usually no Vulkan GPU for gamescope, so the kiosk compositor cage is
+# used instead and Deckard renders through Mesa's software Vulkan (lavapipe).
+#
+# Overrides (e.g. in ~/.config/deckard/session.env):
+#   DECKARD_COMPOSITOR=gamescope|cage   force a compositor
+#   DECKARD_GAMESCOPE_ARGS="..."        extra gamescope arguments
+set -euo pipefail
+
+config_dir="${XDG_CONFIG_HOME:-$HOME/.config}/deckard"
+state_dir="${XDG_STATE_HOME:-$HOME/.local/state}/deckard"
+mkdir -p "$state_dir"
+
+if [[ -f "$config_dir/session.env" ]]; then
+  # shellcheck source=/dev/null
+  source "$config_dir/session.env"
+fi
+
+log="$state_dir/session.log"
+exec >>"$log" 2>&1
+echo "=== deckard-session $(date --iso-8601=seconds)"
+
+compositor="${DECKARD_COMPOSITOR:-}"
+if [[ -z "$compositor" ]]; then
+  if systemd-detect-virt --quiet; then
+    compositor=cage
+  else
+    compositor=gamescope
+  fi
+fi
+echo "compositor: $compositor"
+
+case "$compositor" in
+  gamescope)
+    # shellcheck disable=SC2086 # word splitting of the extra arguments is intended
+    exec gamescope -f ${DECKARD_GAMESCOPE_ARGS:-} -- deckard --fullscreen
+    ;;
+  cage)
+    exec cage -s -- deckard --fullscreen
+    ;;
+  *)
+    echo "unknown compositor: $compositor" >&2
+    exit 1
+    ;;
+esac

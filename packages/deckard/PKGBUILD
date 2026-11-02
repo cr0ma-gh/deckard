@@ -1,0 +1,45 @@
+# Maintainer: cr0ma-gh <https://github.com/cr0ma-gh>
+#
+# Builds Deckard from the checkout this file lives in (packages/deckard/ → the
+# repository root), so the ISO always contains the code being built. Used by
+# scripts/build-iso.sh; run `makepkg` here to build the package by hand.
+
+pkgname=deckard
+pkgver=0.1.0
+pkgrel=1
+pkgdesc="libretro frontend with an XMB-style menu for the Steam Deck"
+arch=('x86_64')
+url="https://github.com/cr0ma-gh/deckard"
+license=('GPL-3.0-or-later' 'OFL-1.1')
+# Linked: alsa-lib (cpal), systemd-libs (libudev, gilrs).
+# Loaded at runtime: vulkan-icd-loader (wgpu), wayland/libxkbcommon (winit).
+depends=('gcc-libs' 'glibc' 'alsa-lib' 'systemd-libs' 'vulkan-icd-loader' 'wayland' 'libxkbcommon')
+makedepends=('rust' 'pkgconf')
+optdepends=(
+  'gamescope: Deckard session on real hardware'
+  'cage: Deckard session in virtual machines'
+  'libretro-snes9x: Super Nintendo core'
+  'libretro-mgba: Game Boy Advance core'
+  'libretro-gambatte: Game Boy / Game Boy Color core'
+  'libretro-genesis-plus-gx: Mega Drive core'
+  'libretro-nestopia: NES core'
+  'libretro-beetle-psx: PlayStation core'
+)
+options=('!lto' '!debug')
+
+# DECKARD_SRC lets scripts/build-iso.sh point at a copy of the sources that the
+# unprivileged build user can read.
+_root="${DECKARD_SRC:-$(realpath "$startdir/../..")}"
+
+build() {
+  export CARGO_TARGET_DIR="$srcdir/target"
+  cargo build --release --locked --manifest-path "$_root/frontend/Cargo.toml" -p deckard
+}
+
+package() {
+  install -Dm755 "$srcdir/target/release/deckard" "$pkgdir/usr/bin/deckard"
+  install -Dm755 "$_root/session/deckard-session" "$pkgdir/usr/bin/deckard-session"
+  install -Dm644 "$_root/LICENSE" "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
+  install -Dm644 "$_root/frontend/crates/deckard-ui/assets/fonts/OFL.txt" \
+    "$pkgdir/usr/share/licenses/$pkgname/OFL-Inter.txt"
+}

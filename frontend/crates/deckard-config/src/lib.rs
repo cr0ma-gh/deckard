@@ -88,6 +88,17 @@ impl Paths {
         }
     }
 
+    /// Directories searched for cores, in order: the user's `cores` folder,
+    /// then (on Linux) the distribution's [`SYSTEM_CORE_DIR`].
+    pub fn core_dirs(&self) -> Vec<PathBuf> {
+        let mut dirs = vec![self.cores.clone()];
+        let system = PathBuf::from(SYSTEM_CORE_DIR);
+        if cfg!(target_os = "linux") && system != self.cores {
+            dirs.push(system);
+        }
+        dirs
+    }
+
     /// Creates every directory that does not exist yet.
     pub fn create_all(&self) -> Result<(), ConfigError> {
         for dir in [
@@ -129,9 +140,10 @@ impl SystemConfig {
         self.folder.as_deref().unwrap_or(&self.id)
     }
 
-    /// Path of the core library for this system.
-    pub fn core_path(&self, cores_dir: &Path) -> PathBuf {
-        core_path(&self.core, cores_dir)
+    /// Path of the core library for this system, searched in `core_dirs`
+    /// (see [`Paths::core_dirs`]).
+    pub fn core_path(&self, core_dirs: &[PathBuf]) -> PathBuf {
+        find_core(&self.core, core_dirs)
     }
 
     /// True if `path` has one of this system's extensions.
@@ -158,6 +170,21 @@ pub fn core_path(core: &str, cores_dir: &Path) -> PathBuf {
     } else {
         cores_dir.join(format!("{core}_libretro{suffix}"))
     }
+}
+
+/// Where Linux distributions install libretro cores (Arch: `libretro-*` packages).
+pub const SYSTEM_CORE_DIR: &str = "/usr/lib/libretro";
+
+/// The first existing file for `core` in `dirs`; if none exists, the path in the
+/// first directory (so error messages point where the user should put it).
+pub fn find_core(core: &str, dirs: &[PathBuf]) -> PathBuf {
+    let candidates: Vec<PathBuf> = dirs.iter().map(|d| core_path(core, d)).collect();
+    candidates
+        .iter()
+        .find(|p| p.is_file())
+        .or(candidates.first())
+        .cloned()
+        .unwrap_or_else(|| PathBuf::from(core))
 }
 
 /// Video settings (used by the menu in phase 2c).
@@ -418,6 +445,40 @@ mod tests {
             dir.join(format!("my{suffix}"))
         );
         assert_eq!(core_path("sub/x.so", dir), dir.join("sub/x.so"));
+    }
+
+    #[test]
+    fn finds_cores_in_the_first_directory_that_has_them() {
+        let root = std::env::temp_dir().join(format!("deckard-cores-{}", std::process::id()));
+        let (user, system) = (root.join("user"), root.join("system"));
+        fs::create_dir_all(&user).unwrap();
+        fs::create_dir_all(&system).unwrap();
+        let suffix = std::env::consts::DLL_SUFFIX;
+        fs::write(system.join(format!("snes9x_libretro{suffix}")), b"x").unwrap();
+        let dirs = [user.clone(), system.clone()];
+
+        assert_eq!(
+            find_core("snes9x", &dirs),
+            system.join(format!("snes9x_libretro{suffix}"))
+        );
+        fs::write(user.join(format!("snes9x_libretro{suffix}")), b"x").unwrap();
+        assert_eq!(
+            find_core("snes9x", &dirs),
+            user.join(format!("snes9x_libretro{suffix}")),
+            "user first"
+        );
+        assert_eq!(
+            find_core("missing", &dirs),
+            user.join(format!("missing_libretro{suffix}"))
+        );
+        fs::remove_dir_all(&root).unwrap();
+    }
+
+    #[test]
+    fn system_core_dir_is_searched_on_linux() {
+        let dirs = Paths::default().resolve(Path::new("data")).core_dirs();
+        assert_eq!(dirs[0], Path::new("data").join("cores"));
+        assert_eq!(dirs.len(), if cfg!(target_os = "linux") { 2 } else { 1 });
     }
 
     #[test]

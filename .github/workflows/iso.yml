@@ -1,0 +1,31 @@
+name: ISO
+
+# Builds the Deckard live image in an Arch Linux container. Run it by hand
+# (Actions → ISO → Run workflow) or push a tag like v0.1.0; the ISO is
+# attached to the run as an artifact.
+on:
+  workflow_dispatch:
+  push:
+    tags: ["v*"]
+
+jobs:
+  iso:
+    name: Build ISO
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    container:
+      image: archlinux:latest
+      # mkarchiso needs loop devices and mounts.
+      options: --privileged
+    steps:
+      - name: Install build tools
+        run: pacman -Syu --noconfirm --needed archiso base-devel rust pkgconf git
+      - uses: actions/checkout@v4
+      - name: Build
+        run: bash scripts/build-iso.sh out
+      - uses: actions/upload-artifact@v4
+        with:
+          name: deckard-iso
+          path: out/*.iso
+          compression-level: 0
+          retention-days: 14

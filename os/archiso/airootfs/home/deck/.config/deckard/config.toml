@@ -1,0 +1,6 @@
+# Deckard configuration for the live image. Relative paths are inside
+# ~/.local/share/deckard/. Cores are also searched in /usr/lib/libretro.
+language = "en"
+
+[video]
+fullscreen = true

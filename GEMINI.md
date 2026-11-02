@@ -37,13 +37,16 @@ Registra ogni nuova decisione architetturale in `docs/decisions/` (formato ADR b
 
 ## 3. Struttura del repository (prevista) `[CONDIVISO]`
 
-Esistono già (Fasi 0–2b): `libretro-sys`, `deckard-core`, `deckard-video`,
-`deckard-audio`, `deckard-input`, `deckard-config`, `deckard-library`,
-`deckard-ui`, `deckard-test-core`, `deckard`, la CI in
-`.github/workflows/ci.yml` e `docs/decisions/`. Gli altri crate e cartelle
-(`deckard-system`, `os/`, `packages/`, `session/`, `scripts/`) sono previsti:
-creali nella fase in cui servono, non prima. Aggiorna questa sezione quando la
+Esistono già (Fasi 0–3): tutti i crate tranne `deckard-system`, `os/`,
+`packages/deckard/`, `session/deckard-session`, `scripts/` (build ISO, QEMU),
+la CI (`.github/workflows/ci.yml`: Rust + shellcheck; `iso.yml`: immagine) e
+`docs/decisions/`. `deckard-system` e `docs/hardware.md` sono previsti: creali
+nella fase in cui servono, non prima. Aggiorna questa sezione quando la
 struttura cambia.
+
+Il repository è pubblico: **github.com/cr0ma-gh/deckard** (remote `origin`).
+I commit usano l'identità `cr0ma-gh` con l'email noreply di GitHub, configurata
+nel repository: non usare altre email.
 
 ```
 Deckard/
@@ -65,10 +68,12 @@ Deckard/
 │       ├── deckard-system/    # integrazione OS: batteria, luminosità, Wi-Fi, cambio sessione
 │       └── deckard/           # binario principale
 ├── os/
-│   └── archiso/               # profilo archiso (profiledef.sh, packages.x86_64, airootfs/)
-├── packages/                  # PKGBUILD: deckard, core libretro, file di sessione
-├── session/                   # script/unità per avvio e cambio sessione Deckard <-> Steam
-├── scripts/                   # build ISO, container di build, utilità
+│   ├── README.md              # come si costruisce e prova l'immagine
+│   └── archiso/               # aggiunte al profilo releng: packages.x86_64,
+│                              #   profiledef.overrides.sh, airootfs/ (greetd, utente, sudo)
+├── packages/deckard/          # PKGBUILD che compila Deckard da questo checkout
+├── session/                   # deckard-session (gamescope/cage); cambio sessione in Fase 4
+├── scripts/                   # build-iso.sh, run-qemu.sh
 └── docs/
     ├── decisions/             # ADR
     └── hardware.md            # note su Steam Deck LCD
@@ -107,6 +112,8 @@ Deckard/
   manca viene creato con i default. I percorsi relativi sono dentro
   `<data dir>/deckard/` (Linux: `~/.local/share/deckard/`): `roms/`, `cores/`,
   `system/`, `saves/`, `states/`, `thumbnails/`, `core-options/`.
+- Core: cercati in `cores/` dell'utente e poi, su Linux, in `/usr/lib/libretro`
+  (`Paths::core_dirs`, `find_core`).
 - Sistemi: tabelle `[[system]]` con `id`, `name`, `core`, `extensions`,
   `folder` opzionale (default = `id`). Se il file ne definisce, sostituiscono i
   default (NES, SNES, GB, GBC, GBA, Mega Drive, PlayStation).
@@ -230,7 +237,23 @@ Comandi non gestiti: restituire `false` e loggare una volta sola a livello `debu
 
 ## 5. Sistema operativo (archiso) `[CONDIVISO]`
 
-- Profilo in `os/archiso/`, derivato dal profilo `releng` di archiso ma ridotto.
+- **Implementazione (Fase 3, ADR 0006)**: `scripts/build-iso.sh` copia il
+  profilo `releng` di archiso e ci applica `os/archiso/` (pacchetti in più,
+  nome/permessi, overlay `airootfs/`), compila il pacchetto `deckard` dal
+  checkout in un repository pacman locale, abilita i servizi con symlink
+  (greetd come display manager, Bluetooth, PipeWire utente) e lancia
+  `mkarchiso`. Non mettere symlink nel repository: si creano nello script
+  (il repository si modifica anche da Windows).
+- Utente `deck` (uid 1000) creato da `airootfs/etc/sysusers.d/deckard.conf`,
+  senza password, `sudo` senza password (immagine live).
+- greetd `initial_session` → `deckard-session` (`session/`), che avvia
+  `gamescope -f -- deckard --fullscreen` sull'hardware e `cage -s -- deckard`
+  nelle macchine virtuali (`systemd-detect-virt`); log in
+  `~/.local/state/deckard/session.log`; override in
+  `~/.config/deckard/session.env` (`DECKARD_COMPOSITOR`, `DECKARD_GAMESCOPE_ARGS`).
+- Core: pacchetti Arch `libretro-*` in `/usr/lib/libretro`
+  (`deckard_config::SYSTEM_CORE_DIR`), cercati dopo `cores/` dell'utente.
+  I sistemi predefiniti usano solo core pacchettizzati da Arch.
 - **Kernel**: partire con il kernel Arch `linux` mainline + `linux-firmware` +
   `sof-firmware` + `alsa-ucm-conf` (il Deck LCD è supportato upstream). Valutare il
   kernel Valve (`linux-neptune`) solo se emergono problemi hardware concreti, e
@@ -257,8 +280,10 @@ Lo sviluppatore lavora su **Windows 11**. Quindi:
   sviluppo (winit/wgpu/cpal sono cross-platform; su Windows i core sono `.dll`).
   Il codice specifico Linux (evdev, sysfs, sessioni) sta dietro
   `#[cfg(target_os = "linux")]` in `deckard-input`/`deckard-system`.
-- La **build dell'ISO** richiede Arch Linux: usare un container `archlinux`
-  (Docker/Podman, `--privileged` per i loop device) o WSL2 con Arch.
+- La **build dell'ISO** richiede Arch Linux: il workflow `ISO` di GitHub Actions
+  (container `archlinux` privilegiato) oppure WSL2 con Arch. Sul PC di sviluppo
+  WSL non è ancora installato (`wsl --install archlinux`, lo fa l'utente) e non
+  c'è Docker.
 
 Comandi (da `frontend/`):
 ```bash
@@ -291,15 +316,18 @@ Per provare il core di test via configurazione, copialo in `cores/` come
 Su Linux la build richiede `libasound2-dev` (ALSA) e `libudev-dev` (gilrs).
 Sul portatile di sviluppo il driver Vulkan della Intel UHD va in crash in
 `vkCreateDevice`: per questo si usa la GPU NVIDIA (o `WGPU_BACKEND=dx12`).
-Build ISO (in ambiente Arch, dalla root del repo):
+Build e prova dell'ISO (in ambiente Arch, dalla root del repo; vedi `os/README.md`):
 ```bash
-sudo mkarchiso -v -w /tmp/deckard-work -o out os/archiso
+sudo pacman -S --needed archiso base-devel rust pkgconf git
+sudo scripts/build-iso.sh            # ISO in out/
+scripts/run-qemu.sh                  # avvio UEFI in QEMU (qemu-desktop, edk2-ovmf)
+gh workflow run ISO                  # build in GitHub Actions (artifact "deckard-iso")
 ```
 Se aggiungi o cambi comandi, aggiorna questa sezione.
 
 ## 7. Regole di codice `[CONDIVISO]`
 
-- Rust stable, **edition 2024**. Versione minima supportata (MSRV) **1.88** (richiesta da wgpu e libloading),
+- Rust stable, **edition 2024**. Versione minima supportata (MSRV) **1.89** (richiesta da cosmic-text, usato da glyphon),
   dichiarata in `rust-version` di `frontend/Cargo.toml` e verificata in CI.
   Lint condivisi in `[workspace.lints]`: ogni crate deve avere `[lints] workspace = true`.
 - `cargo fmt` e `cargo clippy -D warnings` devono passare prima di considerare
@@ -355,6 +383,8 @@ Se aggiungi o cambi comandi, aggiorna questa sezione.
    Fase 2 verificata su Windows con il core di test e la tastiera; restano da
    provare un gamepad vero, un core reale e Linux.
 4. **Fase 3** — Profilo archiso avviabile su Steam Deck LCD con Deckard in autostart.
+   File pronti (profilo, PKGBUILD, sessione, script, workflow ISO); da verificare:
+   la build in CI, l'avvio in QEMU e poi sul Deck (pannello, controlli, audio).
 5. **Fase 4** — Dual mode con Steam/gamescope e cambio sessione.
 6. **Fase 5** — Core hardware (Vulkan, poi GL), shader, menu rapido completo, installer.
 

@@ -142,7 +142,7 @@ fn main() -> anyhow::Result<()> {
             .and_then(|rom| config.system_for(rom, &paths.roms));
         let core_path = match (&args.core, system) {
             (Some(core), _) => core.clone(),
-            (None, Some(system)) => system.core_path(&paths.cores),
+            (None, Some(system)) => system.core_path(&paths.core_dirs()),
             (None, None) => bail!(
                 "no configured system accepts this file; add one in {} or pass --core",
                 config_path.display()

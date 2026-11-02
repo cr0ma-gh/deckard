@@ -1,0 +1,2 @@
+# Live image: the "deck" user has no password, so allow sudo without one.
+%wheel ALL=(ALL:ALL) NOPASSWD: ALL

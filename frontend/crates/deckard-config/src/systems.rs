@@ -12,14 +12,15 @@ fn system(id: &str, name: &str, core: &str, extensions: &[&str]) -> SystemConfig
     }
 }
 
-/// Default systems with widely used, actively maintained cores.
+/// Default systems. Every core is packaged by Arch Linux (`libretro-*`, installed
+/// in [`crate::SYSTEM_CORE_DIR`]), so the Deckard image works out of the box.
 /// Users can edit or replace the list in `config.toml`.
 pub fn default_systems() -> Vec<SystemConfig> {
     vec![
         system(
             "nes",
             "Nintendo Entertainment System",
-            "fceumm",
+            "nestopia",
             &["nes", "fds", "unf", "unif"],
         ),
         system(
@@ -40,8 +41,8 @@ pub fn default_systems() -> Vec<SystemConfig> {
         system(
             "psx",
             "PlayStation",
-            "pcsx_rearmed",
-            &["cue", "chd", "pbp", "m3u"],
+            "mednafen_psx",
+            &["cue", "chd", "pbp", "m3u", "ccd", "toc"],
         ),
     ]
 }

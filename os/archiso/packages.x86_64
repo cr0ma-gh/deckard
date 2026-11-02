@@ -1,0 +1,39 @@
+# Packages added on top of archiso's releng profile (merged by scripts/build-iso.sh).
+# Every name was checked on archlinux.org; check again before adding new ones.
+
+# Deckard (built from this repository into a local repo)
+deckard
+
+# Session: greetd autologin, gamescope on hardware, cage in virtual machines
+greetd
+gamescope
+xorg-xwayland
+cage
+
+# Graphics: AMD (Steam Deck) and software Vulkan for virtual machines
+mesa
+vulkan-radeon
+vulkan-swrast
+vulkan-icd-loader
+
+# Audio: Steam Deck firmware and UCM profiles, PipeWire
+sof-firmware
+alsa-ucm-conf
+pipewire
+pipewire-alsa
+pipewire-pulse
+wireplumber
+
+# Bluetooth controllers
+bluez
+bluez-utils
+
+# libretro cores (installed in /usr/lib/libretro)
+libretro-snes9x
+libretro-mgba
+libretro-gambatte
+libretro-genesis-plus-gx
+libretro-nestopia
+libretro-beetle-psx
+
+sudo

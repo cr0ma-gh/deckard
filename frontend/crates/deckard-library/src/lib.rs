@@ -75,7 +75,7 @@ impl Library {
 }
 
 fn scan_system(system: &SystemConfig, paths: &Paths) -> SystemEntry {
-    let core_path = system.core_path(&paths.cores);
+    let core_path = system.core_path(&paths.core_dirs());
     let core_available = core_path.is_file();
     let folder = paths.roms.join(system.folder());
 

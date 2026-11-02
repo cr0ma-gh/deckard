@@ -6,7 +6,7 @@ Funziona in dual mode: modalità Deckard (emulazione) e modalità Steam.
 
 > Stato: **Fase 2 completata** — menu XMB con libreria, copertine, impostazioni
 > e avvio dei giochi; menu rapido in gioco con save state e opzioni del core.
-> Prossimo passo: l'immagine del sistema per Steam Deck (Fase 3).
+> Fase 3 in corso: immagine live per Steam Deck (vedi `os/README.md`).
 
 ## Struttura
 
@@ -22,11 +22,13 @@ Funziona in dual mode: modalità Deckard (emulazione) e modalità Steam.
 | `frontend/crates/deckard-ui/` | Menu XMB: navigazione, layout, traduzioni, disegno |
 | `frontend/crates/deckard-test-core/` | Core libretro minimale usato nei test |
 | `frontend/crates/deckard/` | Binario principale |
+| `os/` | Immagine live per Steam Deck (archiso), vedi [os/README.md](os/README.md) |
+| `packages/`, `session/`, `scripts/` | Pacchetto Arch, sessione gamescope, script di build e QEMU |
 | `docs/decisions/` | Decisioni architetturali (ADR) |
 
 ## Provarlo
 
-Serve Rust stable (versione minima 1.88). Su Linux servono anche
+Serve Rust stable (versione minima 1.89). Su Linux servono anche
 `libasound2-dev` e `libudev-dev`. Da `frontend/`:
 
 ```bash
@@ -64,6 +66,13 @@ del core, riavvia, chiudi);
 `F2`/`F4` = salva/carica stato, `F6`/`F7` = cambia slot; `Esc` = torna al
 menu. Opzioni dei core per una sola sessione:
 `-o chiave=valore`.
+
+## Immagine per Steam Deck
+
+L'ISO live si costruisce con GitHub Actions (scheda *Actions* → *ISO* → *Run
+workflow*) oppure in Arch/WSL2 con `sudo scripts/build-iso.sh`; si prova in QEMU
+con `scripts/run-qemu.sh` e sul Deck da chiavetta USB. Dettagli e stato delle
+verifiche in [os/README.md](os/README.md).
 
 ## Sviluppo
 

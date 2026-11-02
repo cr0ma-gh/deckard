@@ -1,0 +1,13 @@
+# greetd: starts the Deckard session for user "deck" once at boot. If the
+# session exits, a plain text login (agreety) appears on tty1 for debugging.
+
+[terminal]
+vt = 1
+
+[default_session]
+command = "agreety --cmd /bin/bash"
+user = "greeter"
+
+[initial_session]
+command = "deckard-session"
+user = "deck"
