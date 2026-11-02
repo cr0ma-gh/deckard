@@ -498,6 +498,7 @@ impl Overlay for UiRenderer {
                 let left = match t.align {
                     Align::Left => t.x,
                     Align::Center => t.x - width / 2.0,
+                    Align::Right => t.x - width,
                 };
                 Some(TextArea {
                     buffer,

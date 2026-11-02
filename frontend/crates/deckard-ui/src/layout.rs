@@ -6,7 +6,9 @@
 use std::path::PathBuf;
 use std::time::Duration;
 
+use crate::i18n::Strings;
 use crate::nav::{Badge, Menu};
+use crate::quick::QuickMenu;
 
 /// Reference height the layout constants are written for.
 pub const REFERENCE_HEIGHT: f32 = 800.0;
@@ -38,6 +40,8 @@ pub type Color = [f32; 4];
 pub enum Align {
     Left,
     Center,
+    /// `x` is the right edge.
+    Right,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -118,6 +122,21 @@ pub struct Toast {
     pub remaining: Duration,
 }
 
+impl Toast {
+    pub fn new(text: impl Into<String>) -> Self {
+        Self {
+            text: text.into(),
+            remaining: TOAST_TIME,
+        }
+    }
+
+    /// Advances time; returns false once the toast has expired.
+    pub fn update(&mut self, dt: Duration) -> bool {
+        self.remaining = self.remaining.saturating_sub(dt);
+        !self.remaining.is_zero()
+    }
+}
+
 /// Animation state of the menu (what is on screen, as opposed to the target selection).
 #[derive(Debug, Clone)]
 pub struct MenuView {
@@ -158,10 +177,7 @@ impl MenuView {
     }
 
     pub fn show_toast(&mut self, text: impl Into<String>) {
-        self.toast = Some(Toast {
-            text: text.into(),
-            remaining: TOAST_TIME,
-        });
+        self.toast = Some(Toast::new(text));
     }
 
     /// Advances animations by `dt`.
@@ -172,11 +188,8 @@ impl MenuView {
             item.update(dt, SPEED);
         }
         self.time += dt.as_secs_f32();
-        if let Some(toast) = &mut self.toast {
-            toast.remaining = toast.remaining.saturating_sub(dt);
-            if toast.remaining.is_zero() {
-                self.toast = None;
-            }
+        if self.toast.as_mut().is_some_and(|t| !t.update(dt)) {
+            self.toast = None;
         }
     }
 
@@ -376,66 +389,15 @@ pub fn layout(menu: &Menu, view: &MenuView, hints: &Hints, width: f32, height: f
         }
     }
 
-    // Hint bar.
-    let hint_y = height - 44.0 * s;
-    let mut x = width - 40.0 * s;
-    for (button, label) in [("B", &hints.back), ("A", &hints.confirm)] {
-        let label_width = label.chars().count() as f32 * 10.5 * s;
-        x -= label_width;
-        overlay.texts.push(Text {
-            text: label.clone(),
-            x,
-            y: hint_y - 11.0 * s,
-            size: 18.0 * s,
-            color: rgba(WHITE, 0.85),
-            bold: false,
-            align: Align::Left,
-            max_width: label_width + 20.0 * s,
-        });
-        x -= 30.0 * s;
-        overlay.quads.push(Quad {
-            rect: Rect::centered(x, hint_y, 28.0 * s, 28.0 * s),
-            color: [1.0, 1.0, 1.0, 0.85],
-            radius: 14.0 * s,
-        });
-        overlay.texts.push(Text {
-            text: button.into(),
-            x,
-            y: hint_y - 10.0 * s,
-            size: 16.0 * s,
-            color: [0.10, 0.12, 0.20, 1.0],
-            bold: true,
-            align: Align::Center,
-            max_width: 28.0 * s,
-        });
-        x -= 44.0 * s;
-    }
-
-    // Toast.
+    hint_bar(
+        &mut overlay,
+        &[("A", &hints.confirm), ("B", &hints.back)],
+        width - 40.0 * s,
+        height - 44.0 * s,
+        s,
+    );
     if let Some(toast) = &view.toast {
-        let fade = (toast.remaining.as_secs_f32() / 0.4).min(1.0);
-        let w = (toast.text.chars().count() as f32 * 11.0 + 60.0) * s;
-        let rect = Rect::centered(
-            width / 2.0,
-            height - 120.0 * s,
-            w.min(width - 40.0 * s),
-            52.0 * s,
-        );
-        overlay.quads.push(Quad {
-            rect,
-            color: [0.06, 0.07, 0.12, 0.85 * fade],
-            radius: 14.0 * s,
-        });
-        overlay.texts.push(Text {
-            text: toast.text.clone(),
-            x: width / 2.0,
-            y: rect.y + 14.0 * s,
-            size: 19.0 * s,
-            color: rgba(WHITE, fade),
-            bold: false,
-            align: Align::Center,
-            max_width: rect.w - 24.0 * s,
-        });
+        toast_layer(&mut overlay, toast, width, height, s);
     }
 
     Scene {
@@ -444,11 +406,219 @@ pub fn layout(menu: &Menu, view: &MenuView, hints: &Hints, width: f32, height: f
     }
 }
 
+/// Button hints laid out right to left from `right`: `[("A", "Confirm"), …]`
+/// is drawn as "A Confirm  B Back" with the first entry leftmost.
+pub fn hint_bar(layer: &mut Layer, hints: &[(&str, &str)], right: f32, y: f32, s: f32) {
+    let mut x = right;
+    for (button, label) in hints.iter().rev() {
+        let label_width = label.chars().count() as f32 * 10.5 * s;
+        x -= label_width;
+        layer.texts.push(Text {
+            text: (*label).to_owned(),
+            x,
+            y: y - 11.0 * s,
+            size: 18.0 * s,
+            color: rgba(WHITE, 0.85),
+            bold: false,
+            align: Align::Left,
+            max_width: label_width + 20.0 * s,
+        });
+        let badge_w = (button.chars().count() as f32 * 13.0 + 15.0).max(28.0) * s;
+        x -= 10.0 * s + badge_w / 2.0;
+        layer.quads.push(Quad {
+            rect: Rect::centered(x, y, badge_w, 28.0 * s),
+            color: [1.0, 1.0, 1.0, 0.85],
+            radius: 14.0 * s,
+        });
+        layer.texts.push(Text {
+            text: (*button).to_owned(),
+            x,
+            y: y - 10.0 * s,
+            size: 16.0 * s,
+            color: [0.10, 0.12, 0.20, 1.0],
+            bold: true,
+            align: Align::Center,
+            max_width: badge_w,
+        });
+        x -= badge_w / 2.0 + 30.0 * s;
+    }
+}
+
+/// A short message centered near the bottom.
+pub fn toast_layer(layer: &mut Layer, toast: &Toast, width: f32, height: f32, s: f32) {
+    let fade = (toast.remaining.as_secs_f32() / 0.4).min(1.0);
+    let w = (toast.text.chars().count() as f32 * 11.0 + 60.0) * s;
+    let rect = Rect::centered(
+        width / 2.0,
+        height - 120.0 * s,
+        w.min(width - 40.0 * s),
+        52.0 * s,
+    );
+    layer.quads.push(Quad {
+        rect,
+        color: [0.06, 0.07, 0.12, 0.85 * fade],
+        radius: 14.0 * s,
+    });
+    layer.texts.push(Text {
+        text: toast.text.clone(),
+        x: width / 2.0,
+        y: rect.y + 14.0 * s,
+        size: 19.0 * s,
+        color: rgba(WHITE, fade),
+        bold: false,
+        align: Align::Center,
+        max_width: rect.w - 24.0 * s,
+    });
+}
+
+/// Labels for the quick menu's hint bar.
+#[derive(Debug, Clone)]
+pub struct QuickHints {
+    pub confirm: String,
+    pub change: String,
+    pub back: String,
+}
+
+const QUICK_LINE: f32 = 58.0;
+
+/// Index of the first visible line so that `selected` stays on screen.
+pub fn scroll_start(selected: usize, total: usize, visible: usize) -> usize {
+    if total <= visible || visible == 0 {
+        return 0;
+    }
+    selected.saturating_sub(visible / 2).min(total - visible)
+}
+
+/// What is drawn over a running game: the quick menu (if open) and a toast.
+pub fn game_overlay(
+    quick: Option<(&QuickMenu, &Strings)>,
+    toast: Option<&Toast>,
+    hints: &QuickHints,
+    width: f32,
+    height: f32,
+) -> Scene {
+    let s = height / REFERENCE_HEIGHT;
+    let mut layer = Layer::default();
+    if let Some((menu, strings)) = quick {
+        layer.quads.push(Quad {
+            rect: Rect {
+                x: 0.0,
+                y: 0.0,
+                w: width,
+                h: height,
+            },
+            color: [0.0, 0.0, 0.0, 0.55],
+            radius: 0.0,
+        });
+        let panel_w = (width * 0.42).max(500.0 * s).min(width);
+        layer.quads.push(Quad {
+            rect: Rect {
+                x: 0.0,
+                y: 0.0,
+                w: panel_w,
+                h: height,
+            },
+            color: [0.05, 0.07, 0.15, 0.97],
+            radius: 0.0,
+        });
+        layer.texts.push(Text {
+            text: menu.page_title(strings),
+            x: 56.0 * s,
+            y: 44.0 * s,
+            size: 30.0 * s,
+            color: rgba(WHITE, 1.0),
+            bold: true,
+            align: Align::Left,
+            max_width: panel_w - 112.0 * s,
+        });
+
+        let lines = menu.lines(strings);
+        let top = 130.0 * s;
+        let visible = ((height - top - 110.0 * s) / (QUICK_LINE * s))
+            .floor()
+            .max(1.0) as usize;
+        let selected = menu.selected();
+        let start = scroll_start(selected, lines.len(), visible);
+        for (row, (i, line)) in lines
+            .iter()
+            .enumerate()
+            .skip(start)
+            .take(visible)
+            .enumerate()
+        {
+            let y = top + row as f32 * QUICK_LINE * s;
+            let is_selected = i == selected;
+            if is_selected {
+                layer.quads.push(Quad {
+                    rect: Rect {
+                        x: 32.0 * s,
+                        y,
+                        w: panel_w - 64.0 * s,
+                        h: 48.0 * s,
+                    },
+                    color: [0.40, 0.55, 1.0, 0.30],
+                    radius: 12.0 * s,
+                });
+            }
+            let alpha = if is_selected { 1.0 } else { 0.75 };
+            let value_width = line
+                .value
+                .as_ref()
+                .map_or(0.0, |v| (v.chars().count() as f32 * 11.0 + 50.0) * s);
+            layer.texts.push(Text {
+                text: line.label.clone(),
+                x: 56.0 * s,
+                y: y + 11.0 * s,
+                size: 21.0 * s,
+                color: rgba(WHITE, alpha),
+                bold: is_selected,
+                align: Align::Left,
+                max_width: panel_w - 112.0 * s - value_width,
+            });
+            if let Some(value) = &line.value {
+                let text = if line.adjustable && is_selected {
+                    format!("‹ {value} ›")
+                } else {
+                    value.clone()
+                };
+                layer.texts.push(Text {
+                    text,
+                    x: panel_w - 56.0 * s,
+                    y: y + 12.0 * s,
+                    size: 19.0 * s,
+                    color: [0.75, 0.85, 1.0, alpha],
+                    bold: false,
+                    align: Align::Right,
+                    max_width: value_width,
+                });
+            }
+        }
+        hint_bar(
+            &mut layer,
+            &[
+                ("A", &hints.confirm),
+                ("←→", &hints.change),
+                ("B", &hints.back),
+            ],
+            panel_w - 32.0 * s,
+            height - 44.0 * s,
+            s,
+        );
+    }
+    if let Some(toast) = toast {
+        toast_layer(&mut layer, toast, width, height, s);
+    }
+    Scene {
+        time: 0.0,
+        layers: vec![layer],
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::i18n::Strings;
-    use crate::nav::Nav;
+    use crate::nav::{Nav, SettingsView};
+    use crate::quick::OptionEntry;
     use deckard_library::{Game, Library, SystemEntry};
     use std::path::Path;
 
@@ -469,7 +639,12 @@ mod tests {
                 games,
             }],
         };
-        Menu::build(&lib, &Strings::load("en"), Path::new("roms"))
+        Menu::build(
+            &lib,
+            &Strings::load("en"),
+            Path::new("roms"),
+            &SettingsView::default(),
+        )
     }
 
     fn hints() -> Hints {
@@ -560,5 +735,64 @@ mod tests {
         assert!(!view.animating(), "settled and toast gone");
         let scene = layout(&m, &view, &hints(), 1280.0, 800.0);
         assert!(scene.layers[1].texts.iter().all(|t| t.text != "hello"));
+    }
+
+    #[test]
+    fn scroll_keeps_the_selection_visible() {
+        assert_eq!(scroll_start(0, 5, 10), 0, "everything fits");
+        assert_eq!(scroll_start(0, 30, 10), 0);
+        assert_eq!(scroll_start(12, 30, 10), 7);
+        assert_eq!(scroll_start(29, 30, 10), 20, "clamped at the end");
+    }
+
+    #[test]
+    fn game_overlay_draws_quick_menu_and_toast() {
+        let strings = Strings::load("it");
+        let hints = QuickHints {
+            confirm: "Conferma".into(),
+            change: "Cambia".into(),
+            back: "Indietro".into(),
+        };
+        let option = OptionEntry {
+            key: "k".into(),
+            label: "Velocità".into(),
+            values: vec!["1".into(), "2".into()],
+            current: 1,
+        };
+        let mut quick = QuickMenu::new("Mario", 2, vec![option]);
+        let toast = Toast::new("Stato salvato");
+
+        let scene = game_overlay(
+            Some((&quick, &strings)),
+            Some(&toast),
+            &hints,
+            1280.0,
+            800.0,
+        );
+        let texts: Vec<_> = scene.layers[0]
+            .texts
+            .iter()
+            .map(|t| t.text.as_str())
+            .collect();
+        assert!(texts.contains(&"Mario"));
+        assert!(texts.contains(&"Riprendi"));
+        assert!(texts.contains(&"Slot di salvataggio: 2"));
+        assert!(texts.contains(&"Stato salvato"));
+
+        for _ in 0..4 {
+            quick.handle(Nav::Down);
+        }
+        quick.handle(Nav::Confirm);
+        let scene = game_overlay(Some((&quick, &strings)), None, &hints, 1280.0, 800.0);
+        let value = scene.layers[0]
+            .texts
+            .iter()
+            .find(|t| t.text.starts_with('‹'))
+            .unwrap();
+        assert_eq!(value.text, "‹ 2 ›");
+        assert_eq!(value.align, Align::Right);
+
+        let empty = game_overlay(None, None, &hints, 1280.0, 800.0);
+        assert!(empty.layers[0].quads.is_empty(), "nothing over the game");
     }
 }

@@ -167,6 +167,7 @@ fn main() -> anyhow::Result<()> {
     app::run(
         app::Context {
             config,
+            config_path,
             paths,
             library,
         },

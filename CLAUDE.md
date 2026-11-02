@@ -94,12 +94,14 @@ Deckard/
    `UiRenderer`) e **Gioco** (input → `Core::run_frame` quante volte dice
    `pacing.rs` → audio a `deckard-audio` → frame a `deckard-video`). Entrambe
    presentano con vsync; il menu è un `Overlay` disegnato nel pass del video.
-5. Hotkey: il menu rapido in sovrimpressione arriva in Fase 2c. Oggi `Esc`, il
-   tasto Guide/Steam o `F1` chiudono il gioco e tornano al menu; `F2`/`F4`
-   salvano/caricano lo stato, `F6`/`F7` cambiano slot.
+5. Hotkey in gioco: tasto Guide/Steam o `F1` aprono/chiudono il **menu rapido**
+   (il gioco e l'audio vanno in pausa); `Esc` chiude il gioco e torna al menu
+   (dentro il menu rapido vale "indietro"); `F2`/`F4` salvano/caricano lo stato,
+   `F6`/`F7` cambiano slot (con un messaggio a comparsa).
 6. All'uscita la SRAM viene salvata (`Drop` di `Core`) e le opzioni del core
    diverse dal default vanno in `<core-options>/<core>.toml`; i valori passati
-   con `-o` valgono solo per quella sessione e non vengono salvati.
+   con `-o` valgono solo per quella sessione e non vengono salvati, a meno che
+   l'utente li cambi dal menu rapido (`Game::set_option`).
 
 ### 4.1b Configurazione e libreria (ADR 0003)
 - `config.toml` in `<config dir>/deckard/` (Linux: `~/.config/deckard/`); se
@@ -116,6 +118,9 @@ Deckard/
 - Save state: `states/<id sistema>/<nome file>.state` (slot 0) o `.stateN`;
   SRAM: `saves/<nome file>.srm`. Scritture atomiche (file temporaneo + rename).
 - Lingua dell'interfaccia: `language = "it"` o `"en"` (default `"en"`).
+- Le impostazioni cambiate dal menu (scala intera, filtro, lingua) vengono
+  salvate subito in `config.toml` riscrivendo il file: i commenti scritti a mano
+  non si conservano.
 
 ### 4.1c Menu XMB (ADR 0004)
 - `deckard-ui` separa la logica dal disegno: `nav.rs` (modello e navigazione,
@@ -124,9 +129,17 @@ Deckard/
   1280×800 scalata sull'altezza), `i18n.rs` (testi), `render/` (wgpu + glyphon).
   Le modifiche al comportamento vanno in `nav`/`layout` e si testano lì; il
   renderer si verifica con screenshot.
-- Categorie: Impostazioni (Ricarica libreria, Esci) poi un sistema per ogni
-  cartella con giochi; senza giochi compare una voce che indica la cartella ROM.
-  Un gioco senza core mostra "Core mancante" invece di avviarsi.
+- Categorie: Impostazioni (Scala intera, Filtro morbido, Lingua, Ricarica
+  libreria, Esci) poi un sistema per ogni cartella con giochi; senza giochi
+  compare una voce che indica la cartella ROM. Un gioco senza core mostra
+  "Core mancante" invece di avviarsi. Ogni voce ha un `id` stabile: la
+  selezione resta al suo posto anche quando cambia l'etichetta.
+- **Menu rapido** (ADR 0005): modello in `quick.rs` (pagina principale:
+  Riprendi, Salva stato, Carica stato, Slot, Opzioni del core, Riavvia, Chiudi
+  gioco; pagina delle opzioni del core con valori che si cambiano con
+  sinistra/destra), disegno in `layout::game_overlay` come pannello a sinistra
+  sopra il gioco in pausa. I messaggi a comparsa (stato salvato/caricato, slot)
+  usano `Toast`, anche fuori dal menu rapido.
 - Font: **Inter** (licenza OFL, `deckard-ui/assets/fonts/`, con `OFL.txt`),
   unico font caricato: aspetto identico ovunque. Icone disegnate con forme e
   sigle, nessun asset di terzi.
@@ -174,8 +187,14 @@ Comandi non gestiti: restituire `false` e loggare una volta sola a livello `debu
 
 ### 4.4 Video, audio, sincronizzazione
 - Il frame del core viene convertito in BGRA8 su CPU, caricato in una texture e
-  disegnato all'aspect ratio del core (letterbox/pillarbox, filtro nearest) con
-  uno shader WGSL. Integer scale, stretch e shader CRT sono fasi successive.
+  disegnato all'aspect ratio del core (letterbox/pillarbox) con uno shader WGSL.
+  `Renderer::set_scaling(Scaling { integer, smooth })`: scala intera sui
+  multipli dell'altezza del frame (`fit_integer`, ripiega sul normale se non
+  entra nemmeno 1×) e filtro nearest o bilineare. Stretch e shader CRT sono
+  fasi successive.
+- Superficie sRGB: la trasparenza si fonde in spazio lineare, quindi i pannelli
+  scuri sembrano più trasparenti del loro alpha; per pannelli leggibili usare
+  alpha ≥ 0,95.
 - La GPU scelta è quella ad alte prestazioni (portatili ibridi);
   `WGPU_POWER_PREF=high|low` e `WGPU_BACKEND=vulkan|dx12|gl` la cambiano.
 - Pannello LCD: nativamente **800×1280 verticale**, usato ruotato a 1280×800,
@@ -204,8 +223,9 @@ Comandi non gestiti: restituire `false` e loggare una volta sola a livello `debu
   `deckard-input`), gli altri dalla posizione fisica: così le frecce del
   tastierino numerico funzionano e i tasti dei giochi non dipendono dal layout.
 - Tastiera (sviluppo su desktop): frecce, `X`=A, `Z`=B, `S`=X, `A`=Y, `Q`/`W`=L/R,
-  `1`/`2`=L2/R2, `Invio`=Start, `Shift destro`=Select, `Esc`=esci, `F2`/`F4`
-  salva/carica stato, `F6`/`F7` slot precedente/successivo (come RetroArch).
+  `1`/`2`=L2/R2, `Invio`=Start, `Shift destro`=Select, `F1`=menu rapido,
+  `Esc`=chiudi gioco, `F2`/`F4` salva/carica stato, `F6`/`F7` slot
+  precedente/successivo (come RetroArch).
 - Le mappature configurabili andranno in `deckard-config` (fase successiva); i trackpad
   (mouse/lightgun) sono una fase successiva.
 
@@ -330,8 +350,11 @@ Se aggiungi o cambi comandi, aggiorna questa sezione.
      save state su file con slot, scelta del core dalla ROM, `--list`;
    - **2b** ✅ menu XMB disegnato con wgpu + glyphon (font Inter, OFL), navigazione
      come macchina a stati testata, copertine, avvio di un gioco e ritorno al menu;
-   - **2c** menu rapido in gioco (Guide/Steam o `F1`), opzioni del core dal menu,
-     impostazioni video (scala intera, filtro). Copertine solo locali.
+   - **2c** ✅ menu rapido in gioco (Guide/Steam o `F1`) con save state e opzioni
+     del core, impostazioni video (scala intera, filtro) e lingua dal menu.
+     Copertine solo locali.
+   Fase 2 verificata su Windows con il core di test e la tastiera; restano da
+   provare un gamepad vero, un core reale e Linux.
 4. **Fase 3** — Profilo archiso avviabile su Steam Deck LCD con Deckard in autostart.
 5. **Fase 4** — Dual mode con Steam/gamescope e cambio sessione.
 6. **Fase 5** — Core hardware (Vulkan, poi GL), shader, menu rapido completo, installer.

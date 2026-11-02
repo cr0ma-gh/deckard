@@ -4,9 +4,9 @@ Distribuzione Linux per **Steam Deck LCD**, basata su Arch Linux, con un fronten
 libretro nativo scritto in Rust e un'interfaccia a menu in stile XMB.
 Funziona in dual mode: modalità Deckard (emulazione) e modalità Steam.
 
-> Stato: **Fase 2b** — menu XMB con libreria, copertine e avvio dei giochi;
-> video, audio, input, salvataggi e save state. Il menu rapido durante il gioco
-> arriva nella tappa 2c, l'immagine del sistema nella Fase 3.
+> Stato: **Fase 2 completata** — menu XMB con libreria, copertine, impostazioni
+> e avvio dei giochi; menu rapido in gioco con save state e opzioni del core.
+> Prossimo passo: l'immagine del sistema per Steam Deck (Fase 3).
 
 ## Struttura
 
@@ -52,14 +52,17 @@ cargo run -p deckard -- --list                 # cosa vede Deckard
 cargo run -p deckard -- --rom <percorso_rom>   # avvia subito un gioco
 ```
 
-Per l'interfaccia in italiano scrivi `language = "it"` in cima a `config.toml`.
+Lingua, scala intera e filtro si cambiano da Impostazioni nel menu (vengono
+salvati in `config.toml`).
 
 **Nel menu**: frecce (o croce/stick) per muoversi, `Invio` (o A sul gamepad)
 per confermare, `Backspace`/`Esc` (o B) per tornare indietro.
 
 **In gioco**: frecce = croce direzionale, `X` = A, `Z` = B, `Invio` = Start;
-`F2`/`F4` = salva/carica stato, `F6`/`F7` = cambia slot; `Esc` o il tasto
-Guide/Steam tornano al menu. Opzioni dei core per una sola sessione:
+`F1` o il tasto Guide/Steam = menu rapido (salva/carica stato, slot, opzioni
+del core, riavvia, chiudi);
+`F2`/`F4` = salva/carica stato, `F6`/`F7` = cambia slot; `Esc` = torna al
+menu. Opzioni dei core per una sola sessione:
 `-o chiave=valore`.
 
 ## Sviluppo

@@ -30,6 +30,8 @@ pub enum Action {
     },
     Rescan,
     Quit,
+    /// Flip or cycle a setting.
+    Toggle(Setting),
     /// Show a short message (e.g. why a game cannot start).
     Notice(String),
 }
@@ -42,8 +44,25 @@ pub enum Badge {
     Text(String),
 }
 
+/// Settings changeable from the menu.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Setting {
+    IntegerScale,
+    Smooth,
+    Language,
+}
+
+/// Current values of the settings shown in the menu.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct SettingsView {
+    pub integer_scale: bool,
+    pub smooth: bool,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Item {
+    /// Stable identity (game path or setting name), kept when labels change.
+    pub id: String,
     pub label: String,
     pub sublabel: Option<String>,
     pub thumbnail: Option<PathBuf>,
@@ -71,20 +90,55 @@ pub struct Menu {
 
 impl Menu {
     /// Builds the menu from the library. Starts on the first system.
-    pub fn build(library: &Library, strings: &Strings, roms_dir: &Path) -> Self {
+    pub fn build(
+        library: &Library,
+        strings: &Strings,
+        roms_dir: &Path,
+        settings: &SettingsView,
+    ) -> Self {
+        let setting = |id: &str, label: &str, value: &str, info: &str, s: Setting| Item {
+            id: id.into(),
+            label: format!("{label}: {value}"),
+            sublabel: Some(info.to_owned()),
+            thumbnail: None,
+            action: Some(Action::Toggle(s)),
+        };
         let mut categories = vec![Category {
             key: "settings".into(),
             title: strings.settings.clone(),
             badge: Badge::Settings,
             color: [0.55, 0.58, 0.66],
             items: vec![
+                setting(
+                    "integer_scale",
+                    &strings.integer_scale,
+                    strings.on_off(settings.integer_scale),
+                    &strings.integer_scale_info,
+                    Setting::IntegerScale,
+                ),
+                setting(
+                    "smooth",
+                    &strings.smooth_filter,
+                    strings.on_off(settings.smooth),
+                    &strings.smooth_filter_info,
+                    Setting::Smooth,
+                ),
+                setting(
+                    "language",
+                    &strings.language,
+                    &strings.language_name,
+                    &strings.language_info,
+                    Setting::Language,
+                ),
                 Item {
+                    id: "rescan".into(),
                     label: strings.rescan.clone(),
                     sublabel: Some(strings.rescan_info.clone()),
                     thumbnail: None,
                     action: Some(Action::Rescan),
                 },
                 Item {
+                    id: "quit".into(),
                     label: strings.quit.clone(),
                     sublabel: Some(strings.quit_info.clone()),
                     thumbnail: None,
@@ -119,6 +173,7 @@ impl Menu {
                         (Some(msg.clone()), Action::Notice(msg))
                     };
                     Item {
+                        id: game.path.to_string_lossy().into_owned(),
                         label: game.title.clone(),
                         sublabel,
                         thumbnail: game.thumbnail.clone(),
@@ -143,6 +198,7 @@ impl Menu {
                 badge: Badge::Text("ROM".into()),
                 color: [0.35, 0.55, 0.85],
                 items: vec![Item {
+                    id: "no_games".into(),
                     label: strings.no_games.clone(),
                     sublabel: Some(fill(&strings.no_games_info, &[("path", &path)])),
                     thumbnail: None,
@@ -198,12 +254,12 @@ impl Menu {
         for (i, cat) in new.categories.iter().enumerate() {
             let old = self.categories.iter().position(|c| c.key == cat.key);
             if let Some(old) = old {
-                let label = self.categories[old]
+                let id = self.categories[old]
                     .items
                     .get(self.selected_items[old])
-                    .map(|it| &it.label);
-                new.selected_items[i] = label
-                    .and_then(|l| cat.items.iter().position(|it| &it.label == l))
+                    .map(|it| &it.id);
+                new.selected_items[i] = id
+                    .and_then(|id| cat.items.iter().position(|it| &it.id == id))
                     .unwrap_or(0);
             }
             if Some(&cat.key) == current_key.as_ref() {
@@ -283,7 +339,12 @@ mod tests {
     }
 
     fn menu() -> Menu {
-        Menu::build(&library(), &Strings::load("en"), Path::new("roms"))
+        Menu::build(
+            &library(),
+            &Strings::load("en"),
+            Path::new("roms"),
+            &SettingsView::default(),
+        )
     }
 
     #[test]
@@ -338,6 +399,14 @@ mod tests {
 
         m.handle(Nav::Left);
         m.handle(Nav::Left);
+        let toggles = [Setting::IntegerScale, Setting::Smooth, Setting::Language];
+        for (i, setting) in toggles.into_iter().enumerate() {
+            if i > 0 {
+                m.handle(Nav::Down);
+            }
+            assert_eq!(m.handle(Nav::Confirm), Some(Action::Toggle(setting)));
+        }
+        m.handle(Nav::Down);
         assert_eq!(m.handle(Nav::Confirm), Some(Action::Rescan));
         m.handle(Nav::Down);
         assert_eq!(m.handle(Nav::Confirm), Some(Action::Quit));
@@ -349,6 +418,7 @@ mod tests {
             &Library::default(),
             &Strings::load("en"),
             Path::new("/data/roms"),
+            &SettingsView::default(),
         );
         assert_eq!(m.categories.len(), 2);
         let item = m.selected_item().unwrap();
@@ -364,9 +434,39 @@ mod tests {
         m.handle(Nav::Down); // "C"
         let mut lib = library();
         lib.systems[0].games.insert(0, game("0 New"));
-        m.replace(Menu::build(&lib, &Strings::load("en"), Path::new("roms")));
+        m.replace(Menu::build(
+            &lib,
+            &Strings::load("en"),
+            Path::new("roms"),
+            &SettingsView::default(),
+        ));
         assert_eq!(m.selected_category(), 1);
         assert_eq!(m.selected_item().map(|i| i.label.as_str()), Some("C"));
+    }
+
+    #[test]
+    fn settings_show_values_and_keep_selection_when_toggled() {
+        let strings = Strings::load("it");
+        let lib = library();
+        let off = SettingsView::default();
+        let mut m = Menu::build(&lib, &strings, Path::new("roms"), &off);
+        m.handle(Nav::Left);
+        m.handle(Nav::Down); // smooth filter
+        assert_eq!(
+            m.selected_item().map(|i| i.label.as_str()),
+            Some("Filtro morbido: No")
+        );
+
+        let on = SettingsView {
+            integer_scale: false,
+            smooth: true,
+        };
+        m.replace(Menu::build(&lib, &strings, Path::new("roms"), &on));
+        assert_eq!(m.selected_category(), 0);
+        assert_eq!(
+            m.selected_item().map(|i| i.label.as_str()),
+            Some("Filtro morbido: Sì")
+        );
     }
 
     #[test]

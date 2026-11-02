@@ -36,7 +36,8 @@ pub fn rate_control(fill: f64) -> f64 {
 
 /// An open audio output stream.
 pub struct AudioOutput {
-    _stream: cpal::Stream,
+    stream: cpal::Stream,
+    paused: bool,
     producer: rtrb::Producer<f32>,
     capacity: usize,
     device_rate: u32,
@@ -78,7 +79,8 @@ impl AudioOutput {
             "audio output opened"
         );
         Ok(Self {
-            _stream: stream,
+            stream,
+            paused: false,
             producer,
             capacity,
             device_rate,
@@ -87,6 +89,23 @@ impl AudioOutput {
             underruns,
             dropped: 0,
         })
+    }
+
+    /// Stops or restarts playback (e.g. while the game is paused). The queued
+    /// audio is kept and plays on resume.
+    pub fn set_paused(&mut self, paused: bool) {
+        if paused == self.paused {
+            return;
+        }
+        let result = if paused {
+            self.stream.pause()
+        } else {
+            self.stream.play()
+        };
+        match result {
+            Ok(()) => self.paused = paused,
+            Err(e) => tracing::warn!(paused, "cannot change audio playback: {e}"),
+        }
     }
 
     pub fn device_rate(&self) -> u32 {

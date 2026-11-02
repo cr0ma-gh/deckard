@@ -85,8 +85,47 @@ pub fn fit_aspect(window_width: u32, window_height: u32, aspect: f32) -> Viewpor
     }
 }
 
+/// How the game frame is scaled into the window.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct Scaling {
+    /// Scale by whole multiples of the frame height (sharp pixels, may leave borders).
+    pub integer: bool,
+    /// Bilinear filtering instead of nearest.
+    pub smooth: bool,
+}
+
+/// Like [`fit_aspect`], but the height is a whole multiple of `frame_height`.
+/// Falls back to [`fit_aspect`] when even 1x does not fit.
+pub fn fit_integer(
+    window_width: u32,
+    window_height: u32,
+    frame_height: u32,
+    aspect: f32,
+) -> Viewport {
+    let fallback = fit_aspect(window_width, window_height, aspect);
+    if frame_height == 0 || aspect <= 0.0 {
+        return fallback;
+    }
+    let mut scale = window_height / frame_height;
+    while scale > 0 && (frame_height * scale) as f32 * aspect > window_width as f32 {
+        scale -= 1;
+    }
+    if scale == 0 {
+        return fallback;
+    }
+    let height = (frame_height * scale) as f32;
+    let width = (height * aspect).round();
+    Viewport {
+        x: ((window_width as f32 - width) / 2.0).floor(),
+        y: ((window_height as f32 - height) / 2.0).floor(),
+        width,
+        height,
+    }
+}
+
 struct FrameTexture {
     texture: wgpu::Texture,
+    view: wgpu::TextureView,
     bind_group: wgpu::BindGroup,
     width: u32,
     height: u32,
@@ -99,7 +138,9 @@ pub struct Renderer {
     queue: wgpu::Queue,
     config: wgpu::SurfaceConfiguration,
     pipeline: wgpu::RenderPipeline,
-    sampler: wgpu::Sampler,
+    nearest: wgpu::Sampler,
+    linear: wgpu::Sampler,
+    scaling: Scaling,
     texture_format: wgpu::TextureFormat,
     frame: Option<FrameTexture>,
     staging: Vec<u8>,
@@ -181,10 +222,16 @@ impl Renderer {
             multiview_mask: None,
             cache: None,
         });
-        let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
+        let nearest = device.create_sampler(&wgpu::SamplerDescriptor {
             label: Some("nearest"),
             mag_filter: wgpu::FilterMode::Nearest,
             min_filter: wgpu::FilterMode::Nearest,
+            ..Default::default()
+        });
+        let linear = device.create_sampler(&wgpu::SamplerDescriptor {
+            label: Some("linear"),
+            mag_filter: wgpu::FilterMode::Linear,
+            min_filter: wgpu::FilterMode::Linear,
             ..Default::default()
         });
 
@@ -195,10 +242,49 @@ impl Renderer {
             queue,
             config,
             pipeline,
-            sampler,
+            nearest,
+            linear,
+            scaling: Scaling::default(),
             texture_format,
             frame: None,
             staging: Vec::new(),
+        })
+    }
+
+    /// Changes how the game frame is scaled and filtered.
+    pub fn set_scaling(&mut self, scaling: Scaling) {
+        if scaling == self.scaling {
+            return;
+        }
+        let filter_changed = scaling.smooth != self.scaling.smooth;
+        self.scaling = scaling;
+        if filter_changed && let Some(frame) = &self.frame {
+            let bind_group = self.frame_bind_group(&frame.view);
+            if let Some(frame) = &mut self.frame {
+                frame.bind_group = bind_group;
+            }
+        }
+    }
+
+    fn frame_bind_group(&self, view: &wgpu::TextureView) -> wgpu::BindGroup {
+        let sampler = if self.scaling.smooth {
+            &self.linear
+        } else {
+            &self.nearest
+        };
+        self.device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("core frame"),
+            layout: &self.pipeline.get_bind_group_layout(0),
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: wgpu::BindingResource::TextureView(view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: wgpu::BindingResource::Sampler(sampler),
+                },
+            ],
         })
     }
 
@@ -263,22 +349,10 @@ impl Renderer {
             view_formats: &[],
         });
         let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
-        let bind_group = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("core frame"),
-            layout: &self.pipeline.get_bind_group_layout(0),
-            entries: &[
-                wgpu::BindGroupEntry {
-                    binding: 0,
-                    resource: wgpu::BindingResource::TextureView(&view),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 1,
-                    resource: wgpu::BindingResource::Sampler(&self.sampler),
-                },
-            ],
-        });
+        let bind_group = self.frame_bind_group(&view);
         FrameTexture {
             texture,
+            view,
             bind_group,
             width,
             height,
@@ -358,7 +432,12 @@ impl Renderer {
                 multiview_mask: None,
             });
             if let (Some(frame), Some(aspect)) = (&self.frame, game_aspect) {
-                let vp = fit_aspect(self.config.width, self.config.height, aspect);
+                let (w, h) = (self.config.width, self.config.height);
+                let vp = if self.scaling.integer {
+                    fit_integer(w, h, frame.height, aspect)
+                } else {
+                    fit_aspect(w, h, aspect)
+                };
                 if vp.width >= 1.0 && vp.height >= 1.0 {
                     pass.set_viewport(vp.x, vp.y, vp.width, vp.height, 0.0, 1.0);
                     pass.set_pipeline(&self.pipeline);
@@ -381,6 +460,22 @@ impl Renderer {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn integer_scaling() {
+        // 240p in 1280x800: 3x (720 px high), width from the aspect ratio.
+        let vp = fit_integer(1280, 800, 240, 4.0 / 3.0);
+        assert_eq!((vp.width, vp.height), (960.0, 720.0));
+        assert_eq!((vp.x, vp.y), (160.0, 40.0));
+        // Too wide for 3x: drops to 2x.
+        let vp = fit_integer(700, 800, 240, 4.0 / 3.0);
+        assert_eq!(vp.height, 480.0);
+        // Window smaller than 1x: plain fit.
+        assert_eq!(
+            fit_integer(200, 100, 240, 4.0 / 3.0),
+            fit_aspect(200, 100, 4.0 / 3.0)
+        );
+    }
 
     #[test]
     fn letterbox_and_pillarbox() {

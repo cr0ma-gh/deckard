@@ -8,6 +8,7 @@ use anyhow::bail;
 use deckard_config::{Config, CoreOptionsStore, Paths};
 use deckard_core::{Core, CoreConfig};
 use deckard_library::{StateSlots, state_path};
+use deckard_ui::quick::OptionEntry;
 
 use crate::pacing::Pacer;
 
@@ -46,6 +47,8 @@ pub struct Game {
     saved_options: Vec<(String, String)>,
     pub frames: u64,
     pub started: Option<Instant>,
+    /// Time spent paused in the quick menu (excluded from the FPS figure).
+    pub paused: std::time::Duration,
     pub underruns_at_start: u64,
 }
 
@@ -109,8 +112,34 @@ impl Game {
             saved_options,
             frames: 0,
             started: None,
+            paused: std::time::Duration::ZERO,
             underruns_at_start: 0,
         })
+    }
+
+    /// Core options in the form the quick menu shows.
+    pub fn option_entries(&self) -> Vec<OptionEntry> {
+        self.core
+            .options()
+            .iter()
+            .map(|o| OptionEntry {
+                key: o.key.clone(),
+                label: if o.description.is_empty() {
+                    o.key.clone()
+                } else {
+                    o.description.clone()
+                },
+                values: o.values.clone(),
+                current: o.values.iter().position(|v| v == o.value()).unwrap_or(0),
+            })
+            .collect()
+    }
+
+    /// Changes a core option from the menu. The value is saved on exit, even if
+    /// the key was first set with `-o` on the command line.
+    pub fn set_option(&mut self, key: &str, value: &str) -> bool {
+        self.cli_keys.remove(key);
+        self.core.set_option(key, value)
     }
 
     pub fn state_path(&self, slot: u8) -> PathBuf {
@@ -120,7 +149,7 @@ impl Game {
     /// Logs the session and saves option changes; dropping the core then saves SRAM.
     pub fn finish(self, audio_underruns: u64) {
         if let Some(started) = self.started {
-            let seconds = started.elapsed().as_secs_f64();
+            let seconds = started.elapsed().saturating_sub(self.paused).as_secs_f64();
             tracing::info!(
                 frames = self.frames,
                 seconds = format!("{seconds:.2}"),
