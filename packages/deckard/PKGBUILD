@@ -29,7 +29,7 @@ options=('!lto' '!debug')
 
 # DECKARD_SRC lets scripts/build-iso.sh point at a copy of the sources that the
 # unprivileged build user can read.
-_root="${DECKARD_SRC:-$(realpath "$startdir/../..")}"
+_root="${DECKARD_SRC:-$(realpath -m "$startdir/../..")}"
 
 build() {
   export CARGO_TARGET_DIR="$srcdir/target"

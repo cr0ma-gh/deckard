@@ -10,7 +10,11 @@
 set -euo pipefail
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-iso="${1:-$(ls -t "$repo_root"/out/*.iso 2>/dev/null | head -n1 || true)}"
+newest_iso() {
+  find "$repo_root/out" -maxdepth 1 -name '*.iso' -printf '%T@ %p\n' 2>/dev/null |
+    sort -n | tail -n1 | cut -d' ' -f2-
+}
+iso="${1:-$(newest_iso)}"
 [[ -n $iso && -f $iso ]] || {
   echo "error: no ISO found; build one with scripts/build-iso.sh" >&2
   exit 1

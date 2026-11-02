@@ -46,6 +46,16 @@ id "$builder" &>/dev/null ||
   useradd --system --create-home --home-dir "/var/lib/$builder" "$builder"
 chown -R "$builder:" "$work"
 
+step "Installing the package's dependencies"
+# makepkg runs unprivileged and only checks that depends/makedepends are
+# installed, so install them here (as root) from the PKGBUILD itself.
+mapfile -t deps < <(
+  # shellcheck disable=SC2016 # the inner bash expands these, not this one
+  bash -c 'source "$1"; printf "%s\n" "${depends[@]}" "${makedepends[@]}"' _ \
+    "$repo_root/packages/deckard/PKGBUILD"
+)
+pacman -S --needed --noconfirm --asdeps "${deps[@]}"
+
 step "Building the deckard package"
 (
   cd "$work/pkg"
