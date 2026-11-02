@@ -118,6 +118,100 @@ pub const RETRO_ENVIRONMENT_GET_CORE_OPTIONS_VERSION: c_uint = 52;
 pub const RETRO_ENVIRONMENT_GET_INPUT_MAX_USERS: c_uint = 61;
 pub const RETRO_ENVIRONMENT_SET_CORE_OPTIONS_V2: c_uint = 67;
 pub const RETRO_ENVIRONMENT_SET_VARIABLE: c_uint = 70;
+pub const RETRO_ENVIRONMENT_SET_KEYBOARD_CALLBACK: c_uint = 12;
+pub const RETRO_ENVIRONMENT_SET_FRAME_TIME_CALLBACK: c_uint = 21;
+pub const RETRO_ENVIRONMENT_GET_PERF_INTERFACE: c_uint = 28;
+pub const RETRO_ENVIRONMENT_SET_SUBSYSTEM_INFO: c_uint = 34;
+pub const RETRO_ENVIRONMENT_SET_MEMORY_MAPS: c_uint = 36 | RETRO_ENVIRONMENT_EXPERIMENTAL;
+pub const RETRO_ENVIRONMENT_GET_USERNAME: c_uint = 38;
+pub const RETRO_ENVIRONMENT_SET_SUPPORT_ACHIEVEMENTS: c_uint = 42 | RETRO_ENVIRONMENT_EXPERIMENTAL;
+pub const RETRO_ENVIRONMENT_SET_SERIALIZATION_QUIRKS: c_uint = 44;
+pub const RETRO_ENVIRONMENT_GET_VFS_INTERFACE: c_uint = 45 | RETRO_ENVIRONMENT_EXPERIMENTAL;
+pub const RETRO_ENVIRONMENT_SET_CORE_OPTIONS: c_uint = 53;
+pub const RETRO_ENVIRONMENT_SET_CORE_OPTIONS_INTL: c_uint = 54;
+pub const RETRO_ENVIRONMENT_SET_CORE_OPTIONS_DISPLAY: c_uint = 55;
+pub const RETRO_ENVIRONMENT_GET_PREFERRED_HW_RENDER: c_uint = 56;
+pub const RETRO_ENVIRONMENT_GET_MESSAGE_INTERFACE_VERSION: c_uint = 59;
+pub const RETRO_ENVIRONMENT_SET_MESSAGE_EXT: c_uint = 60;
+pub const RETRO_ENVIRONMENT_SET_AUDIO_BUFFER_STATUS_CALLBACK: c_uint = 62;
+pub const RETRO_ENVIRONMENT_SET_MINIMUM_AUDIO_LATENCY: c_uint = 63;
+pub const RETRO_ENVIRONMENT_SET_CORE_OPTIONS_V2_INTL: c_uint = 68;
+pub const RETRO_ENVIRONMENT_SET_CORE_OPTIONS_UPDATE_DISPLAY_CALLBACK: c_uint = 69;
+
+// ---------------------------------------------------------------------------
+// Languages (subset)
+// ---------------------------------------------------------------------------
+
+pub type retro_language = c_int;
+pub const RETRO_LANGUAGE_ENGLISH: retro_language = 0;
+pub const RETRO_LANGUAGE_ITALIAN: retro_language = 5;
+
+// ---------------------------------------------------------------------------
+// Core options
+// ---------------------------------------------------------------------------
+
+pub const RETRO_NUM_CORE_OPTION_VALUES_MAX: usize = 128;
+
+#[repr(C)]
+#[derive(Debug, Clone, Copy)]
+pub struct retro_core_option_value {
+    pub value: *const c_char,
+    pub label: *const c_char,
+}
+
+/// Option definition for `SET_CORE_OPTIONS` (v1). Arrays end with a `NULL` key.
+#[repr(C)]
+#[derive(Debug, Clone, Copy)]
+pub struct retro_core_option_definition {
+    pub key: *const c_char,
+    pub desc: *const c_char,
+    pub info: *const c_char,
+    pub values: [retro_core_option_value; RETRO_NUM_CORE_OPTION_VALUES_MAX],
+    pub default_value: *const c_char,
+}
+
+#[repr(C)]
+#[derive(Debug, Clone, Copy)]
+pub struct retro_core_options_intl {
+    pub us: *const retro_core_option_definition,
+    pub local: *const retro_core_option_definition,
+}
+
+#[repr(C)]
+#[derive(Debug, Clone, Copy)]
+pub struct retro_core_option_v2_category {
+    pub key: *const c_char,
+    pub desc: *const c_char,
+    pub info: *const c_char,
+}
+
+/// Option definition for `SET_CORE_OPTIONS_V2`. Arrays end with a `NULL` key.
+#[repr(C)]
+#[derive(Debug, Clone, Copy)]
+pub struct retro_core_option_v2_definition {
+    pub key: *const c_char,
+    pub desc: *const c_char,
+    pub desc_categorized: *const c_char,
+    pub info: *const c_char,
+    pub info_categorized: *const c_char,
+    pub category_key: *const c_char,
+    pub values: [retro_core_option_value; RETRO_NUM_CORE_OPTION_VALUES_MAX],
+    pub default_value: *const c_char,
+}
+
+#[repr(C)]
+#[derive(Debug, Clone, Copy)]
+pub struct retro_core_options_v2 {
+    pub categories: *const retro_core_option_v2_category,
+    pub definitions: *const retro_core_option_v2_definition,
+}
+
+#[repr(C)]
+#[derive(Debug, Clone, Copy)]
+pub struct retro_core_options_v2_intl {
+    pub us: *const retro_core_options_v2,
+    pub local: *const retro_core_options_v2,
+}
 
 // ---------------------------------------------------------------------------
 // Enums (as c_int + constants)

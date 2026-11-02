@@ -1,0 +1,17 @@
+[package]
+name = "deckard-input"
+description = "Gamepad and keyboard input for Deckard"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+deckard-core.workspace = true
+gilrs.workspace = true
+tracing.workspace = true
+winit.workspace = true
+
+[lints]
+workspace = true

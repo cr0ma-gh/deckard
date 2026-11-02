@@ -115,7 +115,7 @@ macro_rules! check {
         $(
             let name = stringify!($name);
             match $header.get(name) {
-                Some(&expected) if expected == i64::from($name) => {}
+                Some(&expected) if expected == $name as i64 => {}
                 Some(&expected) => $failures.push(format!("{name}: rust={} header={expected}", $name)),
                 None => $failures.push(format!("{name}: not found in libretro.h")),
             }
@@ -205,6 +205,28 @@ fn constants_match_libretro_h() {
             RETRO_ENVIRONMENT_GET_INPUT_MAX_USERS,
             RETRO_ENVIRONMENT_SET_CORE_OPTIONS_V2,
             RETRO_ENVIRONMENT_SET_VARIABLE,
+            RETRO_ENVIRONMENT_SET_KEYBOARD_CALLBACK,
+            RETRO_ENVIRONMENT_SET_FRAME_TIME_CALLBACK,
+            RETRO_ENVIRONMENT_GET_PERF_INTERFACE,
+            RETRO_ENVIRONMENT_SET_SUBSYSTEM_INFO,
+            RETRO_ENVIRONMENT_SET_MEMORY_MAPS,
+            RETRO_ENVIRONMENT_GET_USERNAME,
+            RETRO_ENVIRONMENT_SET_SUPPORT_ACHIEVEMENTS,
+            RETRO_ENVIRONMENT_SET_SERIALIZATION_QUIRKS,
+            RETRO_ENVIRONMENT_GET_VFS_INTERFACE,
+            RETRO_ENVIRONMENT_SET_CORE_OPTIONS,
+            RETRO_ENVIRONMENT_SET_CORE_OPTIONS_INTL,
+            RETRO_ENVIRONMENT_SET_CORE_OPTIONS_DISPLAY,
+            RETRO_ENVIRONMENT_GET_PREFERRED_HW_RENDER,
+            RETRO_ENVIRONMENT_GET_MESSAGE_INTERFACE_VERSION,
+            RETRO_ENVIRONMENT_SET_MESSAGE_EXT,
+            RETRO_ENVIRONMENT_SET_AUDIO_BUFFER_STATUS_CALLBACK,
+            RETRO_ENVIRONMENT_SET_MINIMUM_AUDIO_LATENCY,
+            RETRO_ENVIRONMENT_SET_CORE_OPTIONS_V2_INTL,
+            RETRO_ENVIRONMENT_SET_CORE_OPTIONS_UPDATE_DISPLAY_CALLBACK,
+            RETRO_LANGUAGE_ENGLISH,
+            RETRO_LANGUAGE_ITALIAN,
+            RETRO_NUM_CORE_OPTION_VALUES_MAX,
             RETRO_PIXEL_FORMAT_0RGB1555,
             RETRO_PIXEL_FORMAT_XRGB8888,
             RETRO_PIXEL_FORMAT_RGB565,

@@ -1,0 +1,17 @@
+[package]
+name = "deckard-test-core"
+description = "Minimal libretro core used to test the Deckard frontend"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+libretro-sys.workspace = true
+
+[lints]
+workspace = true

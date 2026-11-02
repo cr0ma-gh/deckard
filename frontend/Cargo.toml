@@ -5,16 +5,31 @@ members = ["crates/*"]
 [workspace.package]
 version = "0.1.0"
 edition = "2024"
-rust-version = "1.85"
+rust-version = "1.88"
 license = "GPL-3.0-or-later"
 publish = false
 
 [workspace.dependencies]
 libretro-sys = { path = "crates/libretro-sys" }
+deckard-core = { path = "crates/deckard-core" }
+deckard-audio = { path = "crates/deckard-audio" }
+deckard-input = { path = "crates/deckard-input" }
+deckard-video = { path = "crates/deckard-video" }
 anyhow = "1"
+bytemuck = { version = "1", features = ["derive"] }
+cc = "1"
 clap = { version = "4", features = ["derive"] }
+cpal = "0.18"
+dirs = "7"
+gilrs = "0.11"
+libloading = "0.9"
+pollster = "1"
+rtrb = "0.4"
+thiserror = "2"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+wgpu = "30"
+winit = "0.30"
 
 [workspace.lints.rust]
 unsafe_op_in_unsafe_fn = "deny"

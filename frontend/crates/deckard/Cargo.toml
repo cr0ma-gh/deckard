@@ -8,11 +8,16 @@ license.workspace = true
 publish.workspace = true
 
 [dependencies]
-libretro-sys.workspace = true
+deckard-audio.workspace = true
+deckard-core.workspace = true
+deckard-input.workspace = true
+deckard-video.workspace = true
 anyhow.workspace = true
 clap.workspace = true
+dirs.workspace = true
 tracing.workspace = true
 tracing-subscriber.workspace = true
+winit.workspace = true
 
 [lints]
 workspace = true
