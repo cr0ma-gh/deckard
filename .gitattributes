@@ -1,0 +1,7 @@
+# The OS image is built on Linux: keep LF everywhere, even when edited on Windows.
+* text=auto eol=lf
+
+*.png binary
+*.jpg binary
+*.ttf binary
+*.otf binary

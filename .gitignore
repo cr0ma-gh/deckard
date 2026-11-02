@@ -1,0 +1,19 @@
+# Rust
+/frontend/target/
+
+# archiso build output
+/out/
+/work/
+
+# Local test content (never commit ROMs, BIOS or cores)
+/content/
+*.so
+*.dll
+*.dylib
+
+# Editors / OS
+.vscode/
+.idea/
+*.swp
+Thumbs.db
+.DS_Store
