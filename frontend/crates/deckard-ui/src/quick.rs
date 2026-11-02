@@ -24,6 +24,7 @@ pub enum QuickAction {
     LoadState,
     NextSlot,
     PreviousSlot,
+    CycleShader,
     Reset,
     CloseGame,
     SetOption { key: String, value: String },
@@ -35,16 +36,18 @@ enum Entry {
     Save,
     Load,
     Slot,
+    Shader,
     Options,
     Reset,
     Close,
 }
 
-const MAIN: [Entry; 7] = [
+const MAIN: [Entry; 8] = [
     Entry::Resume,
     Entry::Save,
     Entry::Load,
     Entry::Slot,
+    Entry::Shader,
     Entry::Options,
     Entry::Reset,
     Entry::Close,
@@ -72,17 +75,24 @@ pub struct QuickMenu {
     main_selected: usize,
     option_selected: usize,
     slot: u8,
+    shader: String,
     options: Vec<OptionEntry>,
 }
 
 impl QuickMenu {
-    pub fn new(title: impl Into<String>, slot: u8, options: Vec<OptionEntry>) -> Self {
+    pub fn new(
+        title: impl Into<String>,
+        slot: u8,
+        shader: impl Into<String>,
+        options: Vec<OptionEntry>,
+    ) -> Self {
         Self {
             title: title.into(),
             page: Page::Main,
             main_selected: 0,
             option_selected: 0,
             slot,
+            shader: shader.into(),
             options,
         }
     }
@@ -103,6 +113,11 @@ impl QuickMenu {
         self.slot = slot;
     }
 
+    /// Updates the current shader label.
+    pub fn set_shader(&mut self, shader: impl Into<String>) {
+        self.shader = shader.into();
+    }
+
     /// Applies one navigation step.
     pub fn handle(&mut self, nav: Nav) -> Option<QuickAction> {
         match self.page {
@@ -119,6 +134,9 @@ impl QuickMenu {
             (Nav::Back, _) => return Some(QuickAction::Resume),
             (Nav::Right | Nav::Confirm, Entry::Slot) => return Some(QuickAction::NextSlot),
             (Nav::Left, Entry::Slot) => return Some(QuickAction::PreviousSlot),
+            (Nav::Right | Nav::Left | Nav::Confirm, Entry::Shader) => {
+                return Some(QuickAction::CycleShader);
+            }
             (Nav::Left | Nav::Right, _) => {}
             (Nav::Confirm, Entry::Resume) => return Some(QuickAction::Resume),
             (Nav::Confirm, Entry::Save) => return Some(QuickAction::SaveState),
@@ -167,21 +185,28 @@ impl QuickMenu {
             Page::Main => MAIN
                 .iter()
                 .map(|entry| {
-                    let label = match entry {
-                        Entry::Resume => strings.resume.clone(),
-                        Entry::Save => strings.save_state.clone(),
-                        Entry::Load => strings.load_state.clone(),
-                        Entry::Slot => {
-                            fill(&strings.state_slot, &[("slot", &self.slot.to_string())])
-                        }
-                        Entry::Options => strings.core_options.clone(),
-                        Entry::Reset => strings.reset.clone(),
-                        Entry::Close => strings.quit_game.clone(),
+                    let (label, value, adjustable) = match entry {
+                        Entry::Resume => (strings.resume.clone(), None, false),
+                        Entry::Save => (strings.save_state.clone(), None, false),
+                        Entry::Load => (strings.load_state.clone(), None, false),
+                        Entry::Slot => (
+                            fill(&strings.state_slot, &[("slot", &self.slot.to_string())]),
+                            None,
+                            true,
+                        ),
+                        Entry::Shader => (
+                            strings.shader.clone(),
+                            Some(strings.shader_label(&self.shader).to_owned()),
+                            true,
+                        ),
+                        Entry::Options => (strings.core_options.clone(), None, false),
+                        Entry::Reset => (strings.reset.clone(), None, false),
+                        Entry::Close => (strings.quit_game.clone(), None, false),
                     };
                     Line {
                         label,
-                        value: None,
-                        adjustable: *entry == Entry::Slot,
+                        value,
+                        adjustable,
                     }
                 })
                 .collect(),
@@ -228,6 +253,7 @@ mod tests {
         QuickMenu::new(
             "Game",
             0,
+            "none",
             vec![
                 option("speed", &["1", "2", "4"], 0),
                 option("fixed", &["x"], 0),
@@ -247,6 +273,10 @@ mod tests {
         assert_eq!(q.handle(Nav::Right), Some(QuickAction::NextSlot));
         assert_eq!(q.handle(Nav::Left), Some(QuickAction::PreviousSlot));
         q.handle(Nav::Down);
+        assert_eq!(q.handle(Nav::Right), Some(QuickAction::CycleShader));
+        assert_eq!(q.handle(Nav::Left), Some(QuickAction::CycleShader));
+        assert_eq!(q.handle(Nav::Confirm), Some(QuickAction::CycleShader));
+        q.handle(Nav::Down);
         q.handle(Nav::Down);
         assert_eq!(q.handle(Nav::Confirm), Some(QuickAction::Reset));
         q.handle(Nav::Down);
@@ -263,7 +293,7 @@ mod tests {
     #[test]
     fn options_page_cycles_values() {
         let mut q = menu();
-        for _ in 0..4 {
+        for _ in 0..5 {
             q.handle(Nav::Down);
         }
         assert_eq!(q.handle(Nav::Confirm), None);
@@ -284,7 +314,7 @@ mod tests {
         assert_eq!(q.handle(Nav::Right), None, "single-value option");
         q.handle(Nav::Back);
         assert_eq!(q.page(), Page::Main);
-        assert_eq!(q.selected(), 4, "back where we were");
+        assert_eq!(q.selected(), 5, "back where we were");
     }
 
     #[test]
@@ -292,12 +322,16 @@ mod tests {
         let strings = Strings::load("it");
         let mut q = menu();
         q.set_slot(3);
+        q.set_shader("crt");
         let lines = q.lines(&strings);
-        assert_eq!(lines.len(), 7);
+        assert_eq!(lines.len(), 8);
         assert_eq!(lines[3].label, "Slot di salvataggio: 3");
         assert!(lines[3].adjustable);
+        assert_eq!(lines[4].label, "Shader video");
+        assert_eq!(lines[4].value.as_deref(), Some("CRT"));
+        assert!(lines[4].adjustable);
 
-        for _ in 0..4 {
+        for _ in 0..5 {
             q.handle(Nav::Down);
         }
         q.handle(Nav::Confirm);
@@ -311,8 +345,8 @@ mod tests {
     #[test]
     fn empty_options_page_explains_itself() {
         let strings = Strings::load("en");
-        let mut q = QuickMenu::new("Game", 0, Vec::new());
-        for _ in 0..4 {
+        let mut q = QuickMenu::new("Game", 0, "none", Vec::new());
+        for _ in 0..5 {
             q.handle(Nav::Down);
         }
         q.handle(Nav::Confirm);

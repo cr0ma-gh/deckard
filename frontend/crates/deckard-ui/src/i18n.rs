@@ -28,6 +28,11 @@ pub struct Strings {
     pub integer_scale_info: String,
     pub smooth_filter: String,
     pub smooth_filter_info: String,
+    pub shader: String,
+    pub shader_info: String,
+    pub shader_none: String,
+    pub shader_scanlines: String,
+    pub shader_crt: String,
     pub language: String,
     pub language_info: String,
     pub language_name: String,
@@ -79,6 +84,15 @@ impl Strings {
             &self.value_on
         } else {
             &self.value_off
+        }
+    }
+
+    /// Label for a shader mode identifier ("none", "scanlines", "crt").
+    pub fn shader_label(&self, mode: &str) -> &str {
+        match mode {
+            "scanlines" => &self.shader_scanlines,
+            "crt" => &self.shader_crt,
+            _ => &self.shader_none,
         }
     }
 }

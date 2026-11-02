@@ -53,14 +53,21 @@ impl Context {
         SettingsView {
             integer_scale: self.config.video.integer_scale,
             smooth: self.config.video.smooth,
+            shader: self.config.video.shader.as_str().into(),
             session_switching: deckard_system::session_switching_available(),
         }
     }
 
     fn scaling(&self) -> Scaling {
+        let shader = match self.config.video.shader {
+            deckard_config::ShaderMode::None => deckard_video::ShaderMode::None,
+            deckard_config::ShaderMode::Scanlines => deckard_video::ShaderMode::Scanlines,
+            deckard_config::ShaderMode::Crt => deckard_video::ShaderMode::Crt,
+        };
         Scaling {
             integer: self.config.video.integer_scale,
             smooth: self.config.video.smooth,
+            shader,
         }
     }
 }
@@ -320,6 +327,7 @@ impl App {
         match setting {
             Setting::IntegerScale => video.integer_scale = !video.integer_scale,
             Setting::Smooth => video.smooth = !video.smooth,
+            Setting::Shader => video.shader = video.shader.next(),
             Setting::Language => {
                 self.ctx.config.language = next_language(&self.ctx.config.language).to_owned();
                 self.strings = Strings::load(&self.ctx.config.language);
@@ -407,6 +415,7 @@ impl App {
         self.quick = Some(QuickMenu::new(
             game.title.clone(),
             game.slots.current(),
+            self.ctx.config.video.shader.as_str(),
             game.option_entries(),
         ));
         if let Some(audio) = &mut self.audio {
@@ -485,6 +494,18 @@ impl App {
             }
             QuickAction::NextSlot => self.change_slot(true),
             QuickAction::PreviousSlot => self.change_slot(false),
+            QuickAction::CycleShader => {
+                self.ctx.config.video.shader = self.ctx.config.video.shader.next();
+                if let Some(running) = &mut self.running {
+                    running.renderer.set_scaling(self.ctx.scaling());
+                }
+                if let Some(quick) = &mut self.quick {
+                    quick.set_shader(self.ctx.config.video.shader.as_str());
+                }
+                if let Err(e) = self.ctx.config.save(&self.ctx.config_path) {
+                    tracing::error!("cannot save the configuration: {e}");
+                }
+            }
             QuickAction::Reset => {
                 if let Mode::Game(game) = &mut self.mode {
                     game.core.reset();

@@ -662,6 +662,7 @@ dependencies = [
 name = "deckard-video"
 version = "0.1.0"
 dependencies = [
+ "bytemuck",
  "deckard-core",
  "pollster",
  "thiserror 2.0.21",

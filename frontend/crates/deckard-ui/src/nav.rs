@@ -51,6 +51,7 @@ pub enum Badge {
 pub enum Setting {
     IntegerScale,
     Smooth,
+    Shader,
     Language,
 }
 
@@ -59,6 +60,7 @@ pub enum Setting {
 pub struct SettingsView {
     pub integer_scale: bool,
     pub smooth: bool,
+    pub shader: String,
     /// Whether the "Switch to Steam" item should appear.
     pub session_switching: bool,
 }
@@ -126,6 +128,13 @@ impl Menu {
                     strings.on_off(settings.smooth),
                     &strings.smooth_filter_info,
                     Setting::Smooth,
+                ),
+                setting(
+                    "shader",
+                    &strings.shader,
+                    strings.shader_label(&settings.shader),
+                    &strings.shader_info,
+                    Setting::Shader,
                 ),
                 setting(
                     "language",
@@ -413,7 +422,12 @@ mod tests {
 
         m.handle(Nav::Left);
         m.handle(Nav::Left);
-        let toggles = [Setting::IntegerScale, Setting::Smooth, Setting::Language];
+        let toggles = [
+            Setting::IntegerScale,
+            Setting::Smooth,
+            Setting::Shader,
+            Setting::Language,
+        ];
         for (i, setting) in toggles.into_iter().enumerate() {
             if i > 0 {
                 m.handle(Nav::Down);
@@ -474,6 +488,7 @@ mod tests {
         let on = SettingsView {
             integer_scale: false,
             smooth: true,
+            shader: "none".into(),
             session_switching: false,
         };
         m.replace(Menu::build(&lib, &strings, Path::new("roms"), &on));

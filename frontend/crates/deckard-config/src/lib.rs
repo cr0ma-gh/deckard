@@ -187,7 +187,36 @@ pub fn find_core(core: &str, dirs: &[PathBuf]) -> PathBuf {
         .unwrap_or_else(|| PathBuf::from(core))
 }
 
-/// Video settings (used by the menu in phase 2c).
+/// Post-processing video shader applied over the game framebuffer.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ShaderMode {
+    #[default]
+    None,
+    Scanlines,
+    Crt,
+}
+
+impl ShaderMode {
+    /// Cycles to the next shader mode: None -> Scanlines -> Crt -> None.
+    pub fn next(self) -> Self {
+        match self {
+            Self::None => Self::Scanlines,
+            Self::Scanlines => Self::Crt,
+            Self::Crt => Self::None,
+        }
+    }
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::None => "none",
+            Self::Scanlines => "scanlines",
+            Self::Crt => "crt",
+        }
+    }
+}
+
+/// Video settings (used by the menu in phase 2c and 5a).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct VideoConfig {
@@ -196,6 +225,8 @@ pub struct VideoConfig {
     /// Bilinear filtering instead of nearest.
     pub smooth: bool,
     pub fullscreen: bool,
+    /// Post-processing CRT / retro shader.
+    pub shader: ShaderMode,
 }
 
 // Not derivable on every platform: fullscreen defaults to true on Linux (the Deck).
@@ -206,6 +237,7 @@ impl Default for VideoConfig {
             integer_scale: false,
             smooth: false,
             fullscreen: cfg!(target_os = "linux"),
+            shader: ShaderMode::None,
         }
     }
 }
@@ -376,6 +408,16 @@ mod tests {
         assert_eq!(config.paths, Paths::default());
         assert_eq!(config.systems, default_systems());
         assert_eq!(config.state_slots, 10);
+    }
+
+    #[test]
+    fn shader_mode_cycles_and_roundtrips() {
+        assert_eq!(ShaderMode::None.next(), ShaderMode::Scanlines);
+        assert_eq!(ShaderMode::Scanlines.next(), ShaderMode::Crt);
+        assert_eq!(ShaderMode::Crt.next(), ShaderMode::None);
+
+        let config = Config::from_toml("[video]\nshader = \"crt\"\n", Path::new("x")).unwrap();
+        assert_eq!(config.video.shader, ShaderMode::Crt);
     }
 
     #[test]

@@ -85,13 +85,35 @@ pub fn fit_aspect(window_width: u32, window_height: u32, aspect: f32) -> Viewpor
     }
 }
 
-/// How the game frame is scaled into the window.
+/// Post-processing shader applied over the game framebuffer.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum ShaderMode {
+    #[default]
+    None,
+    Scanlines,
+    Crt,
+}
+
+/// How the game frame is scaled and shaded into the window.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct Scaling {
     /// Scale by whole multiples of the frame height (sharp pixels, may leave borders).
     pub integer: bool,
     /// Bilinear filtering instead of nearest.
     pub smooth: bool,
+    /// Post-processing CRT / retro shader.
+    pub shader: ShaderMode,
+}
+
+#[repr(C)]
+#[derive(Debug, Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
+struct ShaderParams {
+    source_size: [f32; 2],
+    target_size: [f32; 2],
+    mode: u32,
+    curvature: f32,
+    scanline_weight: f32,
+    mask_strength: f32,
 }
 
 /// Like [`fit_aspect`], but the height is a whole multiple of `frame_height`.
@@ -138,6 +160,7 @@ pub struct Renderer {
     queue: wgpu::Queue,
     config: wgpu::SurfaceConfiguration,
     pipeline: wgpu::RenderPipeline,
+    params_buffer: wgpu::Buffer,
     nearest: wgpu::Sampler,
     linear: wgpu::Sampler,
     scaling: Scaling,
@@ -234,6 +257,12 @@ impl Renderer {
             min_filter: wgpu::FilterMode::Linear,
             ..Default::default()
         });
+        let params_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("shader params"),
+            size: std::mem::size_of::<ShaderParams>() as u64,
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
 
         tracing::debug!("render pipeline ready");
         Ok(Self {
@@ -242,6 +271,7 @@ impl Renderer {
             queue,
             config,
             pipeline,
+            params_buffer,
             nearest,
             linear,
             scaling: Scaling::default(),
@@ -256,7 +286,8 @@ impl Renderer {
         if scaling == self.scaling {
             return;
         }
-        let filter_changed = scaling.smooth != self.scaling.smooth;
+        let filter_changed = scaling.smooth != self.scaling.smooth
+            || (scaling.shader == ShaderMode::Crt) != (self.scaling.shader == ShaderMode::Crt);
         self.scaling = scaling;
         if filter_changed && let Some(frame) = &self.frame {
             let bind_group = self.frame_bind_group(&frame.view);
@@ -267,7 +298,7 @@ impl Renderer {
     }
 
     fn frame_bind_group(&self, view: &wgpu::TextureView) -> wgpu::BindGroup {
-        let sampler = if self.scaling.smooth {
+        let sampler = if self.scaling.smooth || self.scaling.shader == ShaderMode::Crt {
             &self.linear
         } else {
             &self.nearest
@@ -283,6 +314,10 @@ impl Renderer {
                 wgpu::BindGroupEntry {
                     binding: 1,
                     resource: wgpu::BindingResource::Sampler(sampler),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 2,
+                    resource: self.params_buffer.as_entire_binding(),
                 },
             ],
         })
@@ -409,6 +444,37 @@ impl Renderer {
         let view = surface_texture
             .texture
             .create_view(&wgpu::TextureViewDescriptor::default());
+        let game_vp = if let (Some(frame), Some(aspect)) = (&self.frame, game_aspect) {
+            let (w, h) = (self.config.width, self.config.height);
+            let vp = if self.scaling.integer {
+                fit_integer(w, h, frame.height, aspect)
+            } else {
+                fit_aspect(w, h, aspect)
+            };
+            if vp.width >= 1.0 && vp.height >= 1.0 {
+                let (mode, curvature, scanline_weight, mask_strength) = match self.scaling.shader {
+                    ShaderMode::None => (0u32, 0.0f32, 0.0f32, 0.0f32),
+                    ShaderMode::Scanlines => (1u32, 0.0f32, 0.35f32, 0.0f32),
+                    ShaderMode::Crt => (2u32, 0.04f32, 0.30f32, 0.20f32),
+                };
+                let params = ShaderParams {
+                    source_size: [frame.width as f32, frame.height as f32],
+                    target_size: [vp.width, vp.height],
+                    mode,
+                    curvature,
+                    scanline_weight,
+                    mask_strength,
+                };
+                self.queue
+                    .write_buffer(&self.params_buffer, 0, bytemuck::bytes_of(&params));
+                Some(vp)
+            } else {
+                None
+            }
+        } else {
+            None
+        };
+
         let mut encoder = self
             .device
             .create_command_encoder(&wgpu::CommandEncoderDescriptor {
@@ -431,19 +497,11 @@ impl Renderer {
                 occlusion_query_set: None,
                 multiview_mask: None,
             });
-            if let (Some(frame), Some(aspect)) = (&self.frame, game_aspect) {
-                let (w, h) = (self.config.width, self.config.height);
-                let vp = if self.scaling.integer {
-                    fit_integer(w, h, frame.height, aspect)
-                } else {
-                    fit_aspect(w, h, aspect)
-                };
-                if vp.width >= 1.0 && vp.height >= 1.0 {
-                    pass.set_viewport(vp.x, vp.y, vp.width, vp.height, 0.0, 1.0);
-                    pass.set_pipeline(&self.pipeline);
-                    pass.set_bind_group(0, &frame.bind_group, &[]);
-                    pass.draw(0..3, 0..1);
-                }
+            if let (Some(frame), Some(vp)) = (&self.frame, game_vp) {
+                pass.set_viewport(vp.x, vp.y, vp.width, vp.height, 0.0, 1.0);
+                pass.set_pipeline(&self.pipeline);
+                pass.set_bind_group(0, &frame.bind_group, &[]);
+                pass.draw(0..3, 0..1);
             }
             if let Some(o) = overlay {
                 let (w, h) = (self.config.width as f32, self.config.height as f32);
