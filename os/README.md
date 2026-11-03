@@ -58,6 +58,14 @@ o `dd`), spegni il Deck, tieni premuto **Volume giù** e premi **Accensione**
 per aprire il Boot Manager, poi scegli la chiavetta. Il disco interno non viene
 toccato.
 
+## Test automatico di avvio
+
+`scripts/boot-test.sh` avvia l'ISO in QEMU senza finestra, salva uno screenshot
+ogni 15 secondi e, con `DECKARD_BOOT_DIAG=1`, entra come root su tty2, copia i
+log (greetd, sessione Deckard, errori) sulla seriale e fallisce se il processo
+`deckard` non è in esecuzione. Il workflow ISO lo esegue dopo ogni build
+(artifact `boot-screenshots`). Verificato: l'ISO arriva al menu di Deckard.
+
 ## Da verificare sul Deck
 
 - Orientamento del pannello in gamescope (il pannello LCD è verticale):

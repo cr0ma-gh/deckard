@@ -51,7 +51,7 @@ jobs:
       - name: Install QEMU
         run: sudo apt-get update && sudo apt-get install -y qemu-system-x86 ovmf socat
       - name: Boot and take screenshots
-        run: bash scripts/boot-test.sh out/*.iso screenshots 300
+        run: DECKARD_BOOT_DIAG=1 bash scripts/boot-test.sh out/*.iso screenshots 240
       - uses: actions/upload-artifact@v4
         if: always()
         with:

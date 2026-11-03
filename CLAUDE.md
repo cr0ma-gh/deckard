@@ -326,6 +326,7 @@ sudo pacman -S --needed archiso base-devel rust pkgconf git
 sudo scripts/build-iso.sh            # ISO in out/
 scripts/run-qemu.sh                  # avvio UEFI in QEMU (qemu-desktop, edk2-ovmf)
 gh workflow run ISO                  # build in GitHub Actions (artifact "deckard-iso")
+DECKARD_BOOT_DIAG=1 scripts/boot-test.sh out/*.iso shots 120   # avvio senza finestra + screenshot + controllo
 ```
 Se aggiungi o cambi comandi, aggiorna questa sezione.
 
@@ -387,8 +388,9 @@ Se aggiungi o cambi comandi, aggiorna questa sezione.
    Fase 2 verificata su Windows con il core di test e la tastiera; restano da
    provare un gamepad vero, un core reale e Linux.
 4. **Fase 3** — Profilo archiso avviabile su Steam Deck LCD con Deckard in autostart.
-   File pronti (profilo, PKGBUILD, sessione, script, workflow ISO); da verificare:
-   la build in CI, l'avvio in QEMU e poi sul Deck (pannello, controlli, audio).
+   Build verificata in CI e in WSL; l'ISO si avvia in QEMU fino al menu di Deckard
+   (test automatico `scripts/boot-test.sh` nel workflow ISO, con diagnostica).
+   Da verificare sul Deck: pannello, controlli, audio, Wi-Fi.
 5. **Fase 4** ✅ — Dual mode con Steam/gamescope e cambio sessione (`deckard-system`,
    protocollo `next-session`, session manager a loop, `switch-to-deckard.sh`,
    voce "Passa a Steam" nel menu Impostazioni).
