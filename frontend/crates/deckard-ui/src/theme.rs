@@ -71,7 +71,10 @@ mod tests {
         assert!((m[0] - 0.5).abs() < 1e-6);
         let clamped = mix(TEXT, ACCENT, 2.0);
         assert!(
-            clamped.iter().zip(ACCENT).all(|(a, b)| (a - b).abs() < 1e-6),
+            clamped
+                .iter()
+                .zip(ACCENT)
+                .all(|(a, b)| (a - b).abs() < 1e-6),
             "clamped"
         );
         assert_eq!(faded(ACCENT, 0.5)[3], 0.5);
