@@ -759,7 +759,7 @@ mod tests {
             values: vec!["1".into(), "2".into()],
             current: 1,
         };
-        let mut quick = QuickMenu::new("Mario", 2, "none", vec![option]);
+        let mut quick = QuickMenu::new("Mario", 2, "none", 100, None, vec![option]);
         let toast = Toast::new("Stato salvato");
 
         let scene = game_overlay(
@@ -779,7 +779,7 @@ mod tests {
         assert!(texts.contains(&"Slot di salvataggio: 2"));
         assert!(texts.contains(&"Stato salvato"));
 
-        for _ in 0..5 {
+        for _ in 0..6 {
             quick.handle(Nav::Down);
         }
         quick.handle(Nav::Confirm);

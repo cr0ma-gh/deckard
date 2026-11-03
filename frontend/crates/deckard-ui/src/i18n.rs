@@ -49,6 +49,11 @@ pub struct Strings {
     pub state_saved: String,
     pub state_loaded: String,
     pub state_error: String,
+    pub volume: String,
+    pub volume_info: String,
+    pub disc: String,
+    pub disc_inserted: String,
+    pub disc_count: String,
 }
 
 const EN: &str = include_str!("../assets/i18n/en.toml");
@@ -143,6 +148,9 @@ mod tests {
             (&en.state_saved, &it.state_saved, "{slot}"),
             (&en.state_loaded, &it.state_loaded, "{slot}"),
             (&en.state_error, &it.state_error, "{error}"),
+            (&en.disc_inserted, &it.disc_inserted, "{disc}"),
+            (&en.disc_count, &it.disc_count, "{current}"),
+            (&en.disc_count, &it.disc_count, "{count}"),
         ];
         for (a, b, placeholder) in pairs {
             assert!(

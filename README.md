@@ -4,9 +4,9 @@ Distribuzione Linux per **Steam Deck LCD**, basata su Arch Linux, con un fronten
 libretro nativo scritto in Rust e un'interfaccia a menu in stile XMB.
 Funziona in dual mode: modalità Deckard (emulazione) e modalità Steam.
 
-> Stato: **Fase 2 completata** — menu XMB con libreria, copertine, impostazioni
-> e avvio dei giochi; menu rapido in gioco con save state e opzioni del core.
-> Fase 3 in corso: immagine live per Steam Deck (vedi `os/README.md`).
+> Stato: **Fasi 0, 1, 2, 4 completate**; **Fase 3** (immagine live ISO archiso)
+> verificata con successo su GitHub Actions; **Fase 5 (5a e 5b)** completata
+> (shader CRT/scanline, gestione dischi multipli CD-ROM e volume audio in gioco e impostazioni).
 
 ## Struttura
 

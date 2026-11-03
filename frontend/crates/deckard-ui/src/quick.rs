@@ -17,6 +17,15 @@ pub struct OptionEntry {
 }
 
 /// What the application must do.
+/// Disc drive information shown in the quick menu.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DiscState {
+    pub current: usize,
+    pub count: usize,
+    pub label: Option<String>,
+}
+
+/// What the application must do.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum QuickAction {
     Resume,
@@ -24,7 +33,10 @@ pub enum QuickAction {
     LoadState,
     NextSlot,
     PreviousSlot,
+    NextDisc,
+    PreviousDisc,
     CycleShader,
+    ChangeVolume(i8),
     Reset,
     CloseGame,
     SetOption { key: String, value: String },
@@ -36,22 +48,13 @@ enum Entry {
     Save,
     Load,
     Slot,
+    Disc,
     Shader,
+    Volume,
     Options,
     Reset,
     Close,
 }
-
-const MAIN: [Entry; 8] = [
-    Entry::Resume,
-    Entry::Save,
-    Entry::Load,
-    Entry::Slot,
-    Entry::Shader,
-    Entry::Options,
-    Entry::Reset,
-    Entry::Close,
-];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Page {
@@ -76,6 +79,8 @@ pub struct QuickMenu {
     option_selected: usize,
     slot: u8,
     shader: String,
+    volume: u8,
+    disc: Option<DiscState>,
     options: Vec<OptionEntry>,
 }
 
@@ -84,6 +89,8 @@ impl QuickMenu {
         title: impl Into<String>,
         slot: u8,
         shader: impl Into<String>,
+        volume: u8,
+        disc: Option<DiscState>,
         options: Vec<OptionEntry>,
     ) -> Self {
         Self {
@@ -93,8 +100,23 @@ impl QuickMenu {
             option_selected: 0,
             slot,
             shader: shader.into(),
+            volume,
+            disc,
             options,
         }
+    }
+
+    fn main_entries(&self) -> Vec<Entry> {
+        let mut entries = vec![Entry::Resume, Entry::Save, Entry::Load, Entry::Slot];
+        if self.disc.is_some() {
+            entries.push(Entry::Disc);
+        }
+        entries.push(Entry::Shader);
+        entries.push(Entry::Volume);
+        entries.push(Entry::Options);
+        entries.push(Entry::Reset);
+        entries.push(Entry::Close);
+        entries
     }
 
     pub fn page(&self) -> Page {
@@ -118,6 +140,18 @@ impl QuickMenu {
         self.shader = shader.into();
     }
 
+    /// Updates the volume level.
+    pub fn set_volume(&mut self, volume: u8) {
+        self.volume = volume;
+    }
+
+    /// Updates the current disc information.
+    pub fn set_disc(&mut self, disc: Option<DiscState>) {
+        self.disc = disc;
+        let max_idx = self.main_entries().len().saturating_sub(1);
+        self.main_selected = self.main_selected.min(max_idx);
+    }
+
     /// Applies one navigation step.
     pub fn handle(&mut self, nav: Nav) -> Option<QuickAction> {
         match self.page {
@@ -127,16 +161,29 @@ impl QuickMenu {
     }
 
     fn handle_main(&mut self, nav: Nav) -> Option<QuickAction> {
-        let entry = MAIN[self.main_selected];
+        let entries = self.main_entries();
+        if entries.is_empty() {
+            return None;
+        }
+        let entry = entries
+            .get(self.main_selected)
+            .copied()
+            .unwrap_or(Entry::Resume);
         match (nav, entry) {
             (Nav::Up, _) => self.main_selected = self.main_selected.saturating_sub(1),
-            (Nav::Down, _) => self.main_selected = (self.main_selected + 1).min(MAIN.len() - 1),
+            (Nav::Down, _) => self.main_selected = (self.main_selected + 1).min(entries.len() - 1),
             (Nav::Back, _) => return Some(QuickAction::Resume),
             (Nav::Right | Nav::Confirm, Entry::Slot) => return Some(QuickAction::NextSlot),
             (Nav::Left, Entry::Slot) => return Some(QuickAction::PreviousSlot),
+            (Nav::Right | Nav::Confirm, Entry::Disc) => return Some(QuickAction::NextDisc),
+            (Nav::Left, Entry::Disc) => return Some(QuickAction::PreviousDisc),
             (Nav::Right | Nav::Left | Nav::Confirm, Entry::Shader) => {
                 return Some(QuickAction::CycleShader);
             }
+            (Nav::Right | Nav::Confirm, Entry::Volume) => {
+                return Some(QuickAction::ChangeVolume(10));
+            }
+            (Nav::Left, Entry::Volume) => return Some(QuickAction::ChangeVolume(-10)),
             (Nav::Left | Nav::Right, _) => {}
             (Nav::Confirm, Entry::Resume) => return Some(QuickAction::Resume),
             (Nav::Confirm, Entry::Save) => return Some(QuickAction::SaveState),
@@ -182,8 +229,9 @@ impl QuickMenu {
     /// The lines of the current page.
     pub fn lines(&self, strings: &Strings) -> Vec<Line> {
         match self.page {
-            Page::Main => MAIN
-                .iter()
+            Page::Main => self
+                .main_entries()
+                .into_iter()
                 .map(|entry| {
                     let (label, value, adjustable) = match entry {
                         Entry::Resume => (strings.resume.clone(), None, false),
@@ -194,9 +242,32 @@ impl QuickMenu {
                             None,
                             true,
                         ),
+                        Entry::Disc => {
+                            let val = if let Some(ref d) = self.disc {
+                                if let Some(ref label) = d.label {
+                                    label.clone()
+                                } else {
+                                    fill(
+                                        &strings.disc_count,
+                                        &[
+                                            ("current", &(d.current + 1).to_string()),
+                                            ("count", &d.count.to_string()),
+                                        ],
+                                    )
+                                }
+                            } else {
+                                String::new()
+                            };
+                            (strings.disc.clone(), Some(val), true)
+                        }
                         Entry::Shader => (
                             strings.shader.clone(),
                             Some(strings.shader_label(&self.shader).to_owned()),
+                            true,
+                        ),
+                        Entry::Volume => (
+                            strings.volume.clone(),
+                            Some(format!("{}%", self.volume)),
                             true,
                         ),
                         Entry::Options => (strings.core_options.clone(), None, false),
@@ -254,6 +325,8 @@ mod tests {
             "Game",
             0,
             "none",
+            100,
+            None,
             vec![
                 option("speed", &["1", "2", "4"], 0),
                 option("fixed", &["x"], 0),
@@ -277,9 +350,13 @@ mod tests {
         assert_eq!(q.handle(Nav::Left), Some(QuickAction::CycleShader));
         assert_eq!(q.handle(Nav::Confirm), Some(QuickAction::CycleShader));
         q.handle(Nav::Down);
+        assert_eq!(q.handle(Nav::Right), Some(QuickAction::ChangeVolume(10)));
+        assert_eq!(q.handle(Nav::Left), Some(QuickAction::ChangeVolume(-10)));
+        q.handle(Nav::Down); // Options
         q.handle(Nav::Down);
         assert_eq!(q.handle(Nav::Confirm), Some(QuickAction::Reset));
         q.handle(Nav::Down);
+        assert_eq!(q.handle(Nav::Confirm), Some(QuickAction::CloseGame));
         q.handle(Nav::Down); // clamped
         assert_eq!(q.handle(Nav::Confirm), Some(QuickAction::CloseGame));
         assert_eq!(q.handle(Nav::Back), Some(QuickAction::Resume));
@@ -291,9 +368,30 @@ mod tests {
     }
 
     #[test]
+    fn multi_disc_actions() {
+        let mut q = QuickMenu::new(
+            "Final Fantasy VII",
+            0,
+            "none",
+            100,
+            Some(DiscState {
+                current: 0,
+                count: 3,
+                label: None,
+            }),
+            Vec::new(),
+        );
+        for _ in 0..4 {
+            q.handle(Nav::Down);
+        }
+        assert_eq!(q.handle(Nav::Right), Some(QuickAction::NextDisc));
+        assert_eq!(q.handle(Nav::Left), Some(QuickAction::PreviousDisc));
+    }
+
+    #[test]
     fn options_page_cycles_values() {
         let mut q = menu();
-        for _ in 0..5 {
+        for _ in 0..6 {
             q.handle(Nav::Down);
         }
         assert_eq!(q.handle(Nav::Confirm), None);
@@ -314,7 +412,7 @@ mod tests {
         assert_eq!(q.handle(Nav::Right), None, "single-value option");
         q.handle(Nav::Back);
         assert_eq!(q.page(), Page::Main);
-        assert_eq!(q.selected(), 5, "back where we were");
+        assert_eq!(q.selected(), 6, "back where we were");
     }
 
     #[test]
@@ -323,15 +421,19 @@ mod tests {
         let mut q = menu();
         q.set_slot(3);
         q.set_shader("crt");
+        q.set_volume(80);
         let lines = q.lines(&strings);
-        assert_eq!(lines.len(), 8);
+        assert_eq!(lines.len(), 9);
         assert_eq!(lines[3].label, "Slot di salvataggio: 3");
         assert!(lines[3].adjustable);
         assert_eq!(lines[4].label, "Shader video");
         assert_eq!(lines[4].value.as_deref(), Some("CRT"));
         assert!(lines[4].adjustable);
+        assert_eq!(lines[5].label, "Volume");
+        assert_eq!(lines[5].value.as_deref(), Some("80%"));
+        assert!(lines[5].adjustable);
 
-        for _ in 0..5 {
+        for _ in 0..6 {
             q.handle(Nav::Down);
         }
         q.handle(Nav::Confirm);
@@ -345,8 +447,8 @@ mod tests {
     #[test]
     fn empty_options_page_explains_itself() {
         let strings = Strings::load("en");
-        let mut q = QuickMenu::new("Game", 0, "none", Vec::new());
-        for _ in 0..5 {
+        let mut q = QuickMenu::new("Game", 0, "none", 100, None, Vec::new());
+        for _ in 0..6 {
             q.handle(Nav::Down);
         }
         q.handle(Nav::Confirm);

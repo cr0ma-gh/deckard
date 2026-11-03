@@ -52,17 +52,31 @@ pub enum Setting {
     IntegerScale,
     Smooth,
     Shader,
+    Volume,
     Language,
 }
 
 /// Current values of the settings shown in the menu.
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SettingsView {
     pub integer_scale: bool,
     pub smooth: bool,
     pub shader: String,
+    pub volume: u8,
     /// Whether the "Switch to Steam" item should appear.
     pub session_switching: bool,
+}
+
+impl Default for SettingsView {
+    fn default() -> Self {
+        Self {
+            integer_scale: false,
+            smooth: true,
+            shader: "none".into(),
+            volume: 100,
+            session_switching: false,
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -135,6 +149,13 @@ impl Menu {
                     strings.shader_label(&settings.shader),
                     &strings.shader_info,
                     Setting::Shader,
+                ),
+                setting(
+                    "volume",
+                    &strings.volume,
+                    &format!("{}%", settings.volume),
+                    &strings.volume_info,
+                    Setting::Volume,
                 ),
                 setting(
                     "language",
@@ -426,6 +447,7 @@ mod tests {
             Setting::IntegerScale,
             Setting::Smooth,
             Setting::Shader,
+            Setting::Volume,
             Setting::Language,
         ];
         for (i, setting) in toggles.into_iter().enumerate() {
@@ -476,7 +498,10 @@ mod tests {
     fn settings_show_values_and_keep_selection_when_toggled() {
         let strings = Strings::load("it");
         let lib = library();
-        let off = SettingsView::default();
+        let off = SettingsView {
+            smooth: false,
+            ..Default::default()
+        };
         let mut m = Menu::build(&lib, &strings, Path::new("roms"), &off);
         m.handle(Nav::Left);
         m.handle(Nav::Down); // smooth filter
@@ -489,6 +514,7 @@ mod tests {
             integer_scale: false,
             smooth: true,
             shader: "none".into(),
+            volume: 100,
             session_switching: false,
         };
         m.replace(Menu::build(&lib, &strings, Path::new("roms"), &on));

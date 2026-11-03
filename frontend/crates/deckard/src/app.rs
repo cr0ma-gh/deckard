@@ -54,6 +54,7 @@ impl Context {
             integer_scale: self.config.video.integer_scale,
             smooth: self.config.video.smooth,
             shader: self.config.video.shader.as_str().into(),
+            volume: self.config.audio.volume,
             session_switching: deckard_system::session_switching_available(),
         }
     }
@@ -109,7 +110,10 @@ pub fn run(ctx: Context, game: Option<Game>, options: Options) -> anyhow::Result
     event_loop.set_control_flow(ControlFlow::Poll);
 
     let audio = match AudioOutput::new(AUDIO_LATENCY_MS) {
-        Ok(a) => Some(a),
+        Ok(mut a) => {
+            a.set_volume(ctx.config.audio.volume as f32 / 100.0);
+            Some(a)
+        }
         Err(e) => {
             tracing::warn!("running without audio: {e}");
             None
@@ -323,11 +327,19 @@ impl App {
 
     /// Changes a setting, applies it and saves the configuration.
     fn toggle(&mut self, setting: Setting) {
-        let video = &mut self.ctx.config.video;
         match setting {
-            Setting::IntegerScale => video.integer_scale = !video.integer_scale,
-            Setting::Smooth => video.smooth = !video.smooth,
-            Setting::Shader => video.shader = video.shader.next(),
+            Setting::IntegerScale => {
+                self.ctx.config.video.integer_scale = !self.ctx.config.video.integer_scale
+            }
+            Setting::Smooth => self.ctx.config.video.smooth = !self.ctx.config.video.smooth,
+            Setting::Shader => self.ctx.config.video.shader = self.ctx.config.video.shader.next(),
+            Setting::Volume => {
+                let next_vol = deckard_config::next_volume_step(self.ctx.config.audio.volume);
+                self.ctx.config.audio.volume = next_vol;
+                if let Some(audio) = &mut self.audio {
+                    audio.set_volume(next_vol as f32 / 100.0);
+                }
+            }
             Setting::Language => {
                 self.ctx.config.language = next_language(&self.ctx.config.language).to_owned();
                 self.strings = Strings::load(&self.ctx.config.language);
@@ -411,11 +423,26 @@ impl App {
     // ------------------------------------------------------------------ game
 
     fn open_quick_menu(&mut self) {
-        let Mode::Game(game) = &self.mode else { return };
+        let Mode::Game(game) = &mut self.mode else {
+            return;
+        };
+        let disc = game.core.disk_info().and_then(|d| {
+            if d.count > 1 {
+                Some(deckard_ui::quick::DiscState {
+                    current: d.current,
+                    count: d.count,
+                    label: d.label,
+                })
+            } else {
+                None
+            }
+        });
         self.quick = Some(QuickMenu::new(
             game.title.clone(),
             game.slots.current(),
             self.ctx.config.video.shader.as_str(),
+            self.ctx.config.audio.volume,
+            disc,
             game.option_entries(),
         ));
         if let Some(audio) = &mut self.audio {
@@ -484,6 +511,47 @@ impl App {
         }
     }
 
+    fn change_disc(&mut self, forward: bool) {
+        let Mode::Game(game) = &mut self.mode else {
+            return;
+        };
+        let Some(info) = game.core.disk_info() else {
+            return;
+        };
+        if info.count <= 1 {
+            return;
+        }
+        let target = if forward {
+            (info.current + 1) % info.count
+        } else {
+            (info.current + info.count - 1) % info.count
+        };
+        if game.core.change_disk(target) {
+            if let Some(new_info) = game.core.disk_info() {
+                let label = new_info.label.clone().unwrap_or_else(|| {
+                    fill(
+                        &self.strings.disc_count,
+                        &[
+                            ("current", &(new_info.current + 1).to_string()),
+                            ("count", &new_info.count.to_string()),
+                        ],
+                    )
+                });
+                let toast_msg = fill(&self.strings.disc_inserted, &[("disc", &label)]);
+                self.game_toast(toast_msg);
+                if let Some(quick) = &mut self.quick {
+                    quick.set_disc(Some(deckard_ui::quick::DiscState {
+                        current: new_info.current,
+                        count: new_info.count,
+                        label: new_info.label,
+                    }));
+                }
+            }
+        } else {
+            tracing::error!(target, "core failed to change disk");
+        }
+    }
+
     fn perform_quick(&mut self, action: QuickAction, event_loop: &ActiveEventLoop) {
         match action {
             QuickAction::Resume => self.close_quick_menu(),
@@ -494,6 +562,8 @@ impl App {
             }
             QuickAction::NextSlot => self.change_slot(true),
             QuickAction::PreviousSlot => self.change_slot(false),
+            QuickAction::NextDisc => self.change_disc(true),
+            QuickAction::PreviousDisc => self.change_disc(false),
             QuickAction::CycleShader => {
                 self.ctx.config.video.shader = self.ctx.config.video.shader.next();
                 if let Some(running) = &mut self.running {
@@ -501,6 +571,20 @@ impl App {
                 }
                 if let Some(quick) = &mut self.quick {
                     quick.set_shader(self.ctx.config.video.shader.as_str());
+                }
+                if let Err(e) = self.ctx.config.save(&self.ctx.config_path) {
+                    tracing::error!("cannot save the configuration: {e}");
+                }
+            }
+            QuickAction::ChangeVolume(delta) => {
+                let current = self.ctx.config.audio.volume as i16;
+                let new_vol = (current + delta as i16).clamp(0, 100) as u8;
+                self.ctx.config.audio.volume = new_vol;
+                if let Some(audio) = &mut self.audio {
+                    audio.set_volume(new_vol as f32 / 100.0);
+                }
+                if let Some(quick) = &mut self.quick {
+                    quick.set_volume(new_vol);
                 }
                 if let Err(e) = self.ctx.config.save(&self.ctx.config_path) {
                     tracing::error!("cannot save the configuration: {e}");

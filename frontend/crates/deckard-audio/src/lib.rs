@@ -38,6 +38,7 @@ pub fn rate_control(fill: f64) -> f64 {
 pub struct AudioOutput {
     stream: cpal::Stream,
     paused: bool,
+    volume: f32,
     producer: rtrb::Producer<f32>,
     capacity: usize,
     device_rate: u32,
@@ -81,6 +82,7 @@ impl AudioOutput {
         Ok(Self {
             stream,
             paused: false,
+            volume: 1.0,
             producer,
             capacity,
             device_rate,
@@ -89,6 +91,15 @@ impl AudioOutput {
             underruns,
             dropped: 0,
         })
+    }
+
+    /// Sets the playback volume, 0.0 (muted) to 1.0 (full).
+    pub fn set_volume(&mut self, volume: f32) {
+        self.volume = volume.clamp(0.0, 1.0);
+    }
+
+    pub fn volume(&self) -> f32 {
+        self.volume
     }
 
     /// Stops or restarts playback (e.g. while the game is paused). The queued
@@ -141,8 +152,9 @@ impl AudioOutput {
         self.resampler.process(samples, ratio, &mut self.scratch);
 
         let mut dropped = 0;
+        let vol = self.volume;
         for &s in &self.scratch {
-            if self.producer.push(s).is_err() {
+            if self.producer.push(s * vol).is_err() {
                 dropped += 1;
             }
         }

@@ -6,6 +6,7 @@
 
 mod api;
 mod callbacks;
+pub mod disk;
 pub mod input;
 pub mod options;
 
@@ -21,6 +22,7 @@ use libretro_sys::*;
 
 use crate::api::CoreApi;
 use crate::callbacks::{Shared, enter};
+pub use crate::disk::DiskInfo;
 pub use crate::input::{Button, MAX_PORTS, PadState};
 pub use crate::options::{CoreOption, CoreOptions};
 
@@ -542,6 +544,21 @@ impl Core {
         self.unserialize(&state)?;
         tracing::info!(path = %path.display(), "state loaded");
         Ok(())
+    }
+
+    /// Returns information about the virtual disk tray if supported by the core.
+    pub fn disk_info(&mut self) -> Option<DiskInfo> {
+        let control = self.shared.disk_control?;
+        // Inside `with_core`: the core may call back into the frontend.
+        Some(self.with_core(|_| control.info()))
+    }
+
+    /// Changes the current virtual disk, cycling or selecting `index`.
+    pub fn change_disk(&mut self, index: usize) -> bool {
+        let Some(control) = self.shared.disk_control else {
+            return false;
+        };
+        self.with_core(|_| control.change_disk(index))
     }
 }
 

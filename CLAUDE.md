@@ -186,7 +186,10 @@ XRGB8888, RGB565), log, opzioni dei core in **tutte** le versioni
 (`SET_VARIABLES`, v1, v1 INTL, v2, v2 INTL, `GET_VARIABLE`,
 `GET_VARIABLE_UPDATE`, `SET_VARIABLE`; versione dichiarata: 2), `GET_CAN_DUPE`,
 `SET_GEOMETRY`, `SET_SYSTEM_AV_INFO`, `SET_SUPPORT_NO_GAME`, `SHUTDOWN`,
-`SET_MESSAGE`, `GET_INPUT_BITMASKS`, `GET_TARGET_REFRESH_RATE`, più alcuni
+`SET_MESSAGE`, `GET_INPUT_BITMASKS`, `GET_TARGET_REFRESH_RATE`, dischi multipli
+(`GET_DISK_CONTROL_INTERFACE_VERSION` = 1, `SET_DISK_CONTROL_INTERFACE` ed
+`_EXT_INTERFACE`, `deckard-core/src/disk.rs`; le funzioni dei dischi si
+chiamano sempre dentro `with_core`), più alcuni
 comandi informativi accettati e ignorati.
 Fase 5: `SET_HW_RENDER` con **Vulkan** (`RETRO_HW_CONTEXT_VULKAN`, condividendo il
 device di wgpu tramite `wgpu-hal`), poi OpenGL/GLES tramite EGL + import dmabuf.
@@ -389,7 +392,10 @@ Se aggiungi o cambi comandi, aggiorna questa sezione.
 5. **Fase 4** ✅ — Dual mode con Steam/gamescope e cambio sessione (`deckard-system`,
    protocollo `next-session`, session manager a loop, `switch-to-deckard.sh`,
    voce "Passa a Steam" nel menu Impostazioni).
-6. **Fase 5** — Core hardware (Vulkan, poi GL), shader, menu rapido completo.
+6. **Fase 5** — Core hardware (Vulkan, poi GL), shader, menu rapido completo:
+   - **5a** ✅ Shader CRT e scanline post-processing in WGSL con commutazione dinamica;
+   - **5b** ✅ Supporto dischi multipli (libretro disk control interface) e controllo volume in gioco/impostazioni;
+   - **5c** Core hardware (Vulkan `RETRO_HW_CONTEXT_VULKAN`, poi GL/GLES via dmabuf/EGL).
 7. **Fase 6** — Installer su disco interno (NVMe / eMMC / microSD): procedura guidata
    dall'interfaccia o da script per installare Deckard permanentemente su disco, con
    partizionamento automatico (EFI + root btrfs/ext4), bootloader systemd-boot e

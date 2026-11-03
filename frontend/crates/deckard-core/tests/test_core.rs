@@ -252,3 +252,26 @@ fn reports_changed_options() {
     let changed: Vec<_> = core.options().changed().collect();
     assert_eq!(changed, [("deckard_test_speed", "4")]);
 }
+
+#[test]
+fn disk_control_query_and_swap() {
+    let _lock = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
+    let dir = TempDir::new("disk-control");
+    let mut core = start(config(&dir));
+
+    let info = core.disk_info().expect("disk control should be supported");
+    assert_eq!(info.count, 2);
+    assert_eq!(info.current, 0);
+    assert_eq!(info.label.as_deref(), Some("Disc 1"));
+    assert!(!info.ejected);
+
+    // Swap to Disc 2
+    assert!(core.change_disk(1));
+    let info = core.disk_info().unwrap();
+    assert_eq!(info.current, 1);
+    assert_eq!(info.label.as_deref(), Some("Disc 2"));
+    assert!(!info.ejected);
+
+    // Out of bounds disc index returns false
+    assert!(!core.change_disk(99));
+}

@@ -28,6 +28,7 @@ pub(crate) struct Shared {
     pub support_no_game: bool,
     pub shutdown_requested: bool,
     pub target_refresh_rate: f32,
+    pub disk_control: Option<crate::disk::DiskControl>,
     pub pads: [PadState; MAX_PORTS],
     /// Last frame, tightly packed (`width * bytes_per_pixel` per row).
     pub frame: Vec<u8>,
@@ -56,6 +57,7 @@ impl Shared {
             support_no_game: false,
             shutdown_requested: false,
             target_refresh_rate: 60.0,
+            disk_control: None,
             pads: [PadState::default(); MAX_PORTS],
             frame: Vec::new(),
             frame_width: 0,
@@ -379,6 +381,78 @@ unsafe fn handle_environment(s: &mut Shared, cmd: c_uint, data: *mut c_void) -> 
                 _ => false,
             },
             RETRO_ENVIRONMENT_SET_CORE_OPTIONS_DISPLAY => true,
+
+            RETRO_ENVIRONMENT_SET_DISK_CONTROL_INTERFACE => {
+                if let Some(cb) = read::<retro_disk_control_callback>(data) {
+                    if let (
+                        Some(set_eject),
+                        Some(get_eject),
+                        Some(get_idx),
+                        Some(set_idx),
+                        Some(get_num),
+                    ) = (
+                        cb.set_eject_state,
+                        cb.get_eject_state,
+                        cb.get_image_index,
+                        cb.set_image_index,
+                        cb.get_num_images,
+                    ) {
+                        s.disk_control = Some(crate::disk::DiskControl {
+                            set_eject_state: set_eject,
+                            get_eject_state: get_eject,
+                            get_image_index: get_idx,
+                            set_image_index: set_idx,
+                            get_num_images: get_num,
+                            get_image_label: None,
+                        });
+                        tracing::info!("core registered disk control interface");
+                        true
+                    } else {
+                        false
+                    }
+                } else {
+                    s.disk_control = None;
+                    true
+                }
+            }
+
+            // Version 1: the extended interface (with disk labels) is supported.
+            // Cores ask this before choosing which interface to register.
+            RETRO_ENVIRONMENT_GET_DISK_CONTROL_INTERFACE_VERSION => write(data, 1 as c_uint),
+
+            RETRO_ENVIRONMENT_SET_DISK_CONTROL_EXT_INTERFACE => {
+                if let Some(cb) = read::<retro_disk_control_ext_callback>(data) {
+                    if let (
+                        Some(set_eject),
+                        Some(get_eject),
+                        Some(get_idx),
+                        Some(set_idx),
+                        Some(get_num),
+                    ) = (
+                        cb.set_eject_state,
+                        cb.get_eject_state,
+                        cb.get_image_index,
+                        cb.set_image_index,
+                        cb.get_num_images,
+                    ) {
+                        s.disk_control = Some(crate::disk::DiskControl {
+                            set_eject_state: set_eject,
+                            get_eject_state: get_eject,
+                            get_image_index: get_idx,
+                            set_image_index: set_idx,
+                            get_num_images: get_num,
+                            get_image_label: cb.get_image_label,
+                        });
+                        tracing::info!("core registered extended disk control interface");
+                        true
+                    } else {
+                        false
+                    }
+                } else {
+                    s.disk_control = None;
+                    true
+                }
+            }
 
             // Accepted and ignored: informational for now.
             RETRO_ENVIRONMENT_SET_INPUT_DESCRIPTORS

@@ -96,6 +96,7 @@ pub const RETRO_ENVIRONMENT_SET_PERFORMANCE_LEVEL: c_uint = 8;
 pub const RETRO_ENVIRONMENT_GET_SYSTEM_DIRECTORY: c_uint = 9;
 pub const RETRO_ENVIRONMENT_SET_PIXEL_FORMAT: c_uint = 10;
 pub const RETRO_ENVIRONMENT_SET_INPUT_DESCRIPTORS: c_uint = 11;
+pub const RETRO_ENVIRONMENT_SET_DISK_CONTROL_INTERFACE: c_uint = 13;
 pub const RETRO_ENVIRONMENT_SET_HW_RENDER: c_uint = 14;
 pub const RETRO_ENVIRONMENT_GET_VARIABLE: c_uint = 15;
 pub const RETRO_ENVIRONMENT_SET_VARIABLES: c_uint = 16;
@@ -131,6 +132,8 @@ pub const RETRO_ENVIRONMENT_SET_CORE_OPTIONS: c_uint = 53;
 pub const RETRO_ENVIRONMENT_SET_CORE_OPTIONS_INTL: c_uint = 54;
 pub const RETRO_ENVIRONMENT_SET_CORE_OPTIONS_DISPLAY: c_uint = 55;
 pub const RETRO_ENVIRONMENT_GET_PREFERRED_HW_RENDER: c_uint = 56;
+pub const RETRO_ENVIRONMENT_SET_DISK_CONTROL_EXT_INTERFACE: c_uint = 58;
+pub const RETRO_ENVIRONMENT_GET_DISK_CONTROL_INTERFACE_VERSION: c_uint = 57;
 pub const RETRO_ENVIRONMENT_GET_MESSAGE_INTERFACE_VERSION: c_uint = 59;
 pub const RETRO_ENVIRONMENT_SET_MESSAGE_EXT: c_uint = 60;
 pub const RETRO_ENVIRONMENT_SET_AUDIO_BUFFER_STATUS_CALLBACK: c_uint = 62;
@@ -347,6 +350,45 @@ pub type retro_get_system_av_info_fn = unsafe extern "C" fn(info: *mut retro_sys
 pub type retro_set_controller_port_device_fn = unsafe extern "C" fn(port: c_uint, device: c_uint);
 pub type retro_reset_fn = unsafe extern "C" fn();
 pub type retro_run_fn = unsafe extern "C" fn();
+pub type retro_set_eject_state_t = Option<unsafe extern "C" fn(bool) -> bool>;
+pub type retro_get_eject_state_t = Option<unsafe extern "C" fn() -> bool>;
+pub type retro_get_image_index_t = Option<unsafe extern "C" fn() -> c_uint>;
+pub type retro_set_image_index_t = Option<unsafe extern "C" fn(c_uint) -> bool>;
+pub type retro_get_num_images_t = Option<unsafe extern "C" fn() -> c_uint>;
+pub type retro_replace_image_index_t =
+    Option<unsafe extern "C" fn(c_uint, *const retro_game_info) -> bool>;
+pub type retro_add_image_index_t = Option<unsafe extern "C" fn() -> bool>;
+pub type retro_set_initial_image_t = Option<unsafe extern "C" fn(c_uint, *const c_char) -> bool>;
+pub type retro_get_image_path_t = Option<unsafe extern "C" fn(c_uint, *mut c_char, usize) -> bool>;
+pub type retro_get_image_label_t = Option<unsafe extern "C" fn(c_uint, *mut c_char, usize) -> bool>;
+
+#[repr(C)]
+#[derive(Debug, Clone, Copy)]
+pub struct retro_disk_control_callback {
+    pub set_eject_state: retro_set_eject_state_t,
+    pub get_eject_state: retro_get_eject_state_t,
+    pub get_image_index: retro_get_image_index_t,
+    pub set_image_index: retro_set_image_index_t,
+    pub get_num_images: retro_get_num_images_t,
+    pub replace_image_index: retro_replace_image_index_t,
+    pub add_image_index: retro_add_image_index_t,
+}
+
+#[repr(C)]
+#[derive(Debug, Clone, Copy)]
+pub struct retro_disk_control_ext_callback {
+    pub set_eject_state: retro_set_eject_state_t,
+    pub get_eject_state: retro_get_eject_state_t,
+    pub get_image_index: retro_get_image_index_t,
+    pub set_image_index: retro_set_image_index_t,
+    pub get_num_images: retro_get_num_images_t,
+    pub replace_image_index: retro_replace_image_index_t,
+    pub add_image_index: retro_add_image_index_t,
+    pub set_initial_image: retro_set_initial_image_t,
+    pub get_image_path: retro_get_image_path_t,
+    pub get_image_label: retro_get_image_label_t,
+}
+
 pub type retro_serialize_size_fn = unsafe extern "C" fn() -> usize;
 pub type retro_serialize_fn = unsafe extern "C" fn(data: *mut c_void, len: usize) -> bool;
 pub type retro_unserialize_fn = unsafe extern "C" fn(data: *const c_void, len: usize) -> bool;
@@ -381,6 +423,8 @@ mod tests {
         assert_eq!(size_of::<retro_input_descriptor>(), 24);
         assert_eq!(size_of::<retro_message>(), 16);
         assert_eq!(size_of::<retro_log_callback>(), 8);
+        assert_eq!(size_of::<retro_disk_control_callback>(), 56);
+        assert_eq!(size_of::<retro_disk_control_ext_callback>(), 80);
     }
 
     #[test]

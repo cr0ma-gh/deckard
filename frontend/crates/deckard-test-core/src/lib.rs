@@ -276,10 +276,119 @@ pub extern "C" fn retro_reset() {
     }
 }
 
+struct DiscState {
+    ejected: bool,
+    index: c_uint,
+}
+
+static DISCS: Mutex<DiscState> = Mutex::new(DiscState {
+    ejected: false,
+    index: 0,
+});
+
+unsafe extern "C" fn disk_set_eject_state(ejected: bool) -> bool {
+    let mut d = DISCS.lock().unwrap_or_else(|e| e.into_inner());
+    d.ejected = ejected;
+    true
+}
+
+unsafe extern "C" fn disk_get_eject_state() -> bool {
+    let d = DISCS.lock().unwrap_or_else(|e| e.into_inner());
+    d.ejected
+}
+
+unsafe extern "C" fn disk_get_image_index() -> c_uint {
+    let d = DISCS.lock().unwrap_or_else(|e| e.into_inner());
+    d.index
+}
+
+unsafe extern "C" fn disk_set_image_index(index: c_uint) -> bool {
+    let mut d = DISCS.lock().unwrap_or_else(|e| e.into_inner());
+    if d.ejected && index < 2 {
+        d.index = index;
+        true
+    } else {
+        false
+    }
+}
+
+unsafe extern "C" fn disk_get_num_images() -> c_uint {
+    2
+}
+
+unsafe extern "C" fn disk_replace_image_index(
+    _index: c_uint,
+    _info: *const retro_game_info,
+) -> bool {
+    false
+}
+
+unsafe extern "C" fn disk_add_image_index() -> bool {
+    false
+}
+
+unsafe extern "C" fn disk_get_image_label(index: c_uint, s: *mut c_char, len: usize) -> bool {
+    let label = match index {
+        0 => c"Disc 1",
+        1 => c"Disc 2",
+        _ => return false,
+    };
+    let bytes = label.to_bytes_with_nul();
+    if len < bytes.len() {
+        return false;
+    }
+    // SAFETY: caller provided a writable buffer of length `len`.
+    unsafe {
+        ptr::copy_nonoverlapping(bytes.as_ptr().cast::<c_char>(), s, bytes.len());
+    }
+    true
+}
+
 #[unsafe(no_mangle)]
 pub extern "C" fn retro_load_game(_game: *const retro_game_info) -> bool {
     let mut format = RETRO_PIXEL_FORMAT_XRGB8888;
-    env(RETRO_ENVIRONMENT_SET_PIXEL_FORMAT, (&raw mut format).cast())
+    let _ = env(RETRO_ENVIRONMENT_SET_PIXEL_FORMAT, (&raw mut format).cast());
+
+    // Like real cores: ask the frontend which disk interface it supports and
+    // register the extended one (with labels) only if it says version >= 1.
+    let mut version: c_uint = 0;
+    let has_ext = env(
+        RETRO_ENVIRONMENT_GET_DISK_CONTROL_INTERFACE_VERSION,
+        (&raw mut version).cast(),
+    ) && version >= 1;
+    if has_ext {
+        let disk_cb = retro_disk_control_ext_callback {
+            set_eject_state: Some(disk_set_eject_state),
+            get_eject_state: Some(disk_get_eject_state),
+            get_image_index: Some(disk_get_image_index),
+            set_image_index: Some(disk_set_image_index),
+            get_num_images: Some(disk_get_num_images),
+            replace_image_index: Some(disk_replace_image_index),
+            add_image_index: Some(disk_add_image_index),
+            set_initial_image: None,
+            get_image_path: None,
+            get_image_label: Some(disk_get_image_label),
+        };
+        env(
+            RETRO_ENVIRONMENT_SET_DISK_CONTROL_EXT_INTERFACE,
+            (&raw const disk_cb).cast_mut().cast(),
+        );
+    } else {
+        let disk_cb = retro_disk_control_callback {
+            set_eject_state: Some(disk_set_eject_state),
+            get_eject_state: Some(disk_get_eject_state),
+            get_image_index: Some(disk_get_image_index),
+            set_image_index: Some(disk_set_image_index),
+            get_num_images: Some(disk_get_num_images),
+            replace_image_index: Some(disk_replace_image_index),
+            add_image_index: Some(disk_add_image_index),
+        };
+        env(
+            RETRO_ENVIRONMENT_SET_DISK_CONTROL_INTERFACE,
+            (&raw const disk_cb).cast_mut().cast(),
+        );
+    }
+    true
 }
 
 #[unsafe(no_mangle)]

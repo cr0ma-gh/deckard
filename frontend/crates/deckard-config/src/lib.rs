@@ -242,6 +242,30 @@ impl Default for VideoConfig {
     }
 }
 
+/// Audio settings.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct AudioConfig {
+    /// Playback volume percentage (0..=100).
+    pub volume: u8,
+}
+
+/// Next value when cycling the volume from the menu: the next multiple of 10,
+/// wrapping from 100 to 0. Works for any stored value, even one edited by hand.
+pub fn next_volume_step(volume: u8) -> u8 {
+    if volume >= 100 {
+        0
+    } else {
+        (volume / 10 + 1) * 10
+    }
+}
+
+impl Default for AudioConfig {
+    fn default() -> Self {
+        Self { volume: 100 }
+    }
+}
+
 /// The whole `config.toml`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
@@ -250,6 +274,7 @@ pub struct Config {
     pub language: String,
     pub paths: Paths,
     pub video: VideoConfig,
+    pub audio: AudioConfig,
     /// Number of save state slots per game.
     pub state_slots: u8,
     #[serde(rename = "system")]
@@ -262,6 +287,7 @@ impl Default for Config {
             language: "en".into(),
             paths: Paths::default(),
             video: VideoConfig::default(),
+            audio: AudioConfig::default(),
             state_slots: 10,
             systems: default_systems(),
         }
@@ -346,6 +372,11 @@ impl Config {
                     s.id
                 )));
             }
+        }
+        if self.audio.volume > 100 {
+            return Err(ConfigError::Invalid(
+                "audio.volume must be between 0 and 100".into(),
+            ));
         }
         if self.state_slots == 0 {
             return Err(ConfigError::Invalid(
@@ -472,6 +503,26 @@ mod tests {
         let r = paths.resolve(base);
         assert_eq!(r.roms, base.join("roms"));
         assert_eq!(r.cores, abs);
+    }
+
+    #[test]
+    fn volume_steps_and_limits() {
+        assert_eq!(next_volume_step(0), 10);
+        assert_eq!(next_volume_step(90), 100);
+        assert_eq!(next_volume_step(100), 0, "wraps to mute");
+        assert_eq!(
+            next_volume_step(95),
+            100,
+            "hand-edited values snap to the grid"
+        );
+        assert_eq!(next_volume_step(255), 0, "no overflow");
+        let bad = Config::from_toml(
+            "[audio]
+volume = 150
+",
+            Path::new("x"),
+        );
+        assert!(matches!(bad, Err(ConfigError::Invalid(_))));
     }
 
     #[test]
