@@ -2,7 +2,8 @@ name: ISO
 
 # Builds the Deckard live image in an Arch Linux container. Run it by hand
 # (Actions → ISO → Run workflow) or push a tag like v0.1.0; the ISO is
-# attached to the run as an artifact.
+# attached to the run as an artifact. A second job boots it in QEMU and saves
+# screenshots of the boot (artifact "boot-screenshots").
 on:
   workflow_dispatch:
   push:
@@ -28,4 +29,32 @@ jobs:
           name: deckard-iso
           path: out/*.iso
           compression-level: 0
+          retention-days: 14
+
+  boot-test:
+    name: Boot test (QEMU)
+    needs: iso
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: deckard-iso
+          path: out
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' |
+            sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - name: Install QEMU
+        run: sudo apt-get update && sudo apt-get install -y qemu-system-x86 ovmf socat
+      - name: Boot and take screenshots
+        run: bash scripts/boot-test.sh out/*.iso screenshots 300
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: boot-screenshots
+          path: screenshots/
           retention-days: 14
