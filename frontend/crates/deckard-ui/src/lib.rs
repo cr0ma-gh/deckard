@@ -8,6 +8,7 @@
 //! - [`render`]: draws a scene with wgpu and glyphon.
 
 pub mod i18n;
+pub mod installer;
 pub mod layout;
 pub mod nav;
 pub mod quick;

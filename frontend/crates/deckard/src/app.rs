@@ -11,8 +11,12 @@ use deckard_config::{Config, Paths};
 use deckard_input::{Hotkeys, Input, MenuButtons, key_code};
 use deckard_library::Library;
 use deckard_system::SessionTarget;
+use deckard_system::installer::{self as system_installer, InstallJob};
 use deckard_ui::UiRenderer;
 use deckard_ui::i18n::{Strings, fill, next_language};
+use deckard_ui::installer::{
+    DiskEntry, Installer, InstallerAction, InstallerEvent, installer_layer,
+};
 use deckard_ui::layout::{Hints, MenuView, QuickHints, Toast, game_overlay, layout};
 use deckard_ui::nav::{Action, Menu, Setting, SettingsView};
 use deckard_ui::quick::{QuickAction, QuickMenu};
@@ -56,6 +60,7 @@ impl Context {
             shader: self.config.video.shader.as_str().into(),
             volume: self.config.audio.volume,
             session_switching: deckard_system::session_switching_available(),
+            installer_available: system_installer::is_live_system(),
         }
     }
 
@@ -97,6 +102,9 @@ struct App {
     quick: Option<QuickMenu>,
     /// Short message over the running game.
     game_toast: Option<Toast>,
+    /// "Install to disk" dialog over the menu, and the running installation.
+    installer: Option<Installer>,
+    install_job: Option<InstallJob>,
     input: Input,
     audio: Option<AudioOutput>,
     running: Option<Running>,
@@ -138,6 +146,8 @@ pub fn run(ctx: Context, game: Option<Game>, options: Options) -> anyhow::Result
         mode: game.map_or(Mode::Menu, |g| Mode::Game(Box::new(g))),
         quick: None,
         game_toast: None,
+        installer: None,
+        install_job: None,
         input: Input::new(),
         audio,
         running: None,
@@ -269,6 +279,13 @@ impl App {
     fn menu_frame(&mut self, event_loop: &ActiveEventLoop, dt: Duration) -> Presented {
         let buttons = self.input.menu_buttons();
         for nav in self.repeater.update(held(buttons), Instant::now()) {
+            // The installer dialog, when open, takes all input.
+            if let Some(installer) = self.installer.as_mut() {
+                if let Some(action) = installer.handle(nav) {
+                    self.perform_installer(action);
+                }
+                continue;
+            }
             if let Some(action) = self.menu.handle(nav) {
                 self.perform(action, event_loop);
                 if !matches!(self.mode, Mode::Menu) {
@@ -276,6 +293,7 @@ impl App {
                 }
             }
         }
+        self.poll_installer();
 
         self.view.update(&self.menu, dt);
         let hints = self.hints();
@@ -283,22 +301,97 @@ impl App {
             return Presented::No;
         };
         let gpu = running.renderer.gpu();
-        let scene = layout(
+        let mut scene = layout(
             &self.menu,
             &self.view,
             &hints,
             gpu.width as f32,
             gpu.height as f32,
         );
+        if let Some(installer) = &self.installer {
+            scene.layers.push(installer_layer(
+                installer,
+                &self.strings,
+                gpu.width as f32,
+                gpu.height as f32,
+            ));
+        }
         running.ui.draw_background = true;
         running.ui.set_scene(scene);
         running.renderer.render(None, Some(&mut running.ui))
+    }
+
+    /// Opens the "Install to disk" dialog with the disks the installer accepts.
+    fn open_installer(&mut self) {
+        let disks = match system_installer::list_disks() {
+            Ok(disks) => disks,
+            Err(e) => {
+                tracing::error!("cannot list disks: {e}");
+                self.view.show_toast(e.to_string());
+                return;
+            }
+        };
+        let entries = disks
+            .into_iter()
+            .map(|d| DiskEntry {
+                path: d.path,
+                bytes: d.bytes,
+                removable: d.removable,
+                model: d.model,
+            })
+            .collect();
+        self.installer = Some(Installer::new(entries));
+    }
+
+    fn perform_installer(&mut self, action: InstallerAction) {
+        match action {
+            InstallerAction::Close => {
+                self.installer = None;
+                self.install_job = None;
+            }
+            InstallerAction::Start(disk) => match InstallJob::start(&disk) {
+                Ok(job) => self.install_job = Some(job),
+                Err(e) => {
+                    if let Some(installer) = &mut self.installer {
+                        installer.update(InstallerEvent::Error(e.to_string()));
+                    }
+                }
+            },
+            InstallerAction::Reboot => {
+                tracing::info!("rebooting after installation");
+                if let Err(e) = std::process::Command::new("systemctl")
+                    .arg("reboot")
+                    .spawn()
+                {
+                    tracing::error!("cannot reboot: {e}");
+                    self.view.show_toast(e.to_string());
+                }
+            }
+        }
+    }
+
+    /// Forwards the running installation's progress to the dialog.
+    fn poll_installer(&mut self) {
+        let (Some(job), Some(installer)) = (self.install_job.as_mut(), self.installer.as_mut())
+        else {
+            return;
+        };
+        for event in job.poll() {
+            installer.update(match event {
+                system_installer::Event::Progress(percent, step) => {
+                    InstallerEvent::Progress(percent, step)
+                }
+                system_installer::Event::Done => InstallerEvent::Done,
+                system_installer::Event::Error(message) => InstallerEvent::Error(message),
+            });
+        }
     }
 
     fn perform(&mut self, action: Action, event_loop: &ActiveEventLoop) {
         match action {
             Action::Quit => event_loop.exit(),
             Action::SwitchSession => self.switch_session(event_loop),
+            Action::OpenInstaller => self.open_installer(),
             Action::Notice(message) => self.view.show_toast(message),
             Action::Rescan => {
                 self.ctx.library = Library::scan(&self.ctx.config, &self.ctx.paths);

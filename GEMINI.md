@@ -72,8 +72,9 @@ Deckard/
 │   └── archiso/               # aggiunte al profilo releng: packages.x86_64,
 │                              #   profiledef.overrides.sh, airootfs/ (greetd, utente, sudo)
 ├── packages/deckard/          # PKGBUILD che compila Deckard da questo checkout
+├── installer/                 # deckard-install: installazione su disco intero
 ├── session/                   # deckard-session (gamescope/cage); cambio sessione in Fase 4
-├── scripts/                   # build-iso.sh, run-qemu.sh
+├── scripts/                   # build-iso.sh, run-qemu.sh, boot-test.sh, install-test.sh, lib/
 └── docs/
     ├── decisions/             # ADR
     └── hardware.md            # note su Steam Deck LCD
@@ -273,8 +274,13 @@ Comandi non gestiti: restituire `false` e loggare una volta sola a livello `debu
   disponibile dalla modalità Steam (voce/scorciatoia non-Steam).
 - Ventola, TDP, luminosità, batteria: tramite sysfs/strumenti standard. Nessuna
   modifica a firmware/BIOS del Deck.
-- Prima: immagine live ISO avviabile da USB. Installer su disco interno: fase
-  successiva (Fase 6; mai scrivere su disco senza conferma esplicita dell'utente finale).
+- Immagine live ISO avviabile da USB e **installer su disco intero** (ADR 0010):
+  `installer/deckard-install` (`list`, `install <disco> --yes`, righe
+  `PROGRESS`/`DONE`/`ERROR`), voce "Installa su disco" nelle Impostazioni solo
+  in live, due conferme obbligatorie prima di cancellare. Non scrivere mai su un
+  disco reale durante lo sviluppo: si prova solo in QEMU (`scripts/install-test.sh`).
+  Elenco dei file solo-live rimossi in `live_only` dentro lo script: aggiornalo
+  se cambia il profilo releng.
 
 ## 6. Ambiente di sviluppo e comandi `[CONDIVISO]`
 
@@ -397,10 +403,13 @@ Se aggiungi o cambi comandi, aggiorna questa sezione.
    - **5a** ✅ Shader CRT e scanline post-processing in WGSL con commutazione dinamica;
    - **5b** ✅ Supporto dischi multipli (libretro disk control interface) e controllo volume in gioco/impostazioni;
    - **5c** Core hardware (Vulkan `RETRO_HW_CONTEXT_VULKAN`, poi GL/GLES via dmabuf/EGL).
-7. **Fase 6** — Installer su disco interno (NVMe / eMMC / microSD): procedura guidata
-   dall'interfaccia o da script per installare Deckard permanentemente su disco, con
-   partizionamento automatico (EFI + root btrfs/ext4), bootloader systemd-boot e
-   conferma esplicita dell'utente prima di qualsiasi scrittura su disco.
+7. **Fase 6** — Installazione e trasferimento dei contenuti (ordine scelto dall'utente):
+   - **6a** ✅ Installer su disco intero (SSD o microSD, ext4, systemd-boot) dal menu
+     con doppia conferma; testato end-to-end in QEMU (ADR 0010);
+   - **6b** Configurazione Wi-Fi dal menu (serve una tastiera a schermo);
+   - **6c** Cartella condivisa Samba attivabile dalle Impostazioni;
+   - **6d** Caricamento di giochi/BIOS/core da browser (piccolo server web in Deckard).
+   La 5c (core hardware) è rimandata a dopo la Fase 6, su richiesta dell'utente.
 
 Lavora una fase alla volta; non anticipare funzionalità di fasi successive senza richiesta.
 

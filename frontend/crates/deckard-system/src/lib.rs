@@ -6,6 +6,7 @@
 
 use std::path::{Path, PathBuf};
 
+pub mod installer;
 mod session;
 
 pub use session::SessionTarget;
@@ -28,6 +29,8 @@ pub enum SystemError {
         path: PathBuf,
         source: std::io::Error,
     },
+    #[error("{command} failed: {message}")]
+    Command { command: String, message: String },
 }
 
 /// Path of the `next-session` file inside `state_dir`.

@@ -40,6 +40,7 @@ build() {
 package() {
   install -Dm755 "$srcdir/target/release/deckard" "$pkgdir/usr/bin/deckard"
   install -Dm755 "$_root/session/deckard-session" "$pkgdir/usr/bin/deckard-session"
+  install -Dm755 "$_root/installer/deckard-install" "$pkgdir/usr/bin/deckard-install"
   install -Dm755 "$_root/session/switch-to-deckard.sh" "$pkgdir/usr/bin/switch-to-deckard"
   install -Dm644 "$_root/LICENSE" "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
   install -Dm644 "$_root/frontend/crates/deckard-ui/assets/fonts/OFL.txt" \

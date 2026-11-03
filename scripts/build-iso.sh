@@ -38,7 +38,7 @@ mkdir -p "$work"/{src,pkg,build,repo} "$out_dir"
 # ---------------------------------------------------------------- 1. package
 step "Copying sources"
 # A copy the build user can read (home directories are often mode 700).
-tar -C "$repo_root" --exclude=frontend/target -cf - frontend session LICENSE |
+tar -C "$repo_root" --exclude=frontend/target -cf - frontend session installer LICENSE |
   tar -C "$work/src" -xf -
 cp "$repo_root/packages/deckard/PKGBUILD" "$work/pkg/"
 

@@ -1,0 +1,215 @@
+#!/usr/bin/env bash
+# Deckard installer: copies the running live system to a whole disk.
+#
+#   deckard-install list                  disks that can be used, one per line:
+#                                         path<TAB>bytes<TAB>transport<TAB>removable<TAB>model
+#   deckard-install install <disk> --yes  ERASES <disk> and installs Deckard on it
+#
+# While installing it prints "PROGRESS <percent> <step>" lines for the menu,
+# then "DONE" or "ERROR <message>". Must run as root from the live image.
+#
+# Layout: GPT, 1 GiB EFI system partition (FAT32) + ext4 root on the rest,
+# systemd-boot. The live-only parts of archiso's releng profile are removed.
+set -euo pipefail
+
+live_root=/run/archiso/airootfs
+boot_media=/run/archiso/bootmnt
+min_bytes=$((16 * 1024 * 1024 * 1024))
+target=/mnt/deckard-install
+step="starting"
+
+progress() {
+  step="$2"
+  echo "PROGRESS $1 $2"
+}
+fail() {
+  echo "ERROR $*"
+  exit 1
+}
+
+# The disk the live system was booted from (never offered as a target).
+boot_disk() {
+  local src parent
+  src="$(findmnt -no SOURCE "$boot_media" 2>/dev/null || true)"
+  [[ -n $src ]] || return 0
+  parent="$(lsblk -no PKNAME "$src" 2>/dev/null | head -n1 || true)"
+  if [[ -n $parent ]]; then echo "/dev/$parent"; else echo "$src"; fi
+}
+
+list_disks() {
+  local boot line re path size type rm tran model
+  boot="$(boot_disk)"
+  re='PATH="([^"]*)" SIZE="([0-9]*)" TYPE="([^"]*)" RM="([01])" TRAN="([^"]*)" MODEL="([^"]*)"'
+  while IFS= read -r line; do
+    [[ $line =~ $re ]] || continue
+    path="${BASH_REMATCH[1]}" size="${BASH_REMATCH[2]}" type="${BASH_REMATCH[3]}"
+    rm="${BASH_REMATCH[4]}" tran="${BASH_REMATCH[5]}" model="${BASH_REMATCH[6]}"
+    [[ $type == disk ]] || continue
+    [[ $path != "$boot" ]] || continue
+    ((size >= min_bytes)) || continue
+    # Skip disks with anything mounted (in use by the running system).
+    if lsblk -no MOUNTPOINTS "$path" | grep -q .; then continue; fi
+    printf '%s\t%s\t%s\t%s\t%s\n' "$path" "$size" "${tran:-?}" "$rm" "${model:-Disk}"
+  done < <(lsblk -dbnP -o PATH,SIZE,TYPE,RM,TRAN,MODEL)
+}
+
+# Partition N of a disk: /dev/sda → /dev/sda1, /dev/nvme0n1 → /dev/nvme0n1p1.
+part() {
+  if [[ $1 =~ [0-9]$ ]]; then echo "${1}p$2"; else echo "${1}$2"; fi
+}
+
+cleanup() {
+  sync
+  umount -R "$target" 2>/dev/null || true
+}
+
+# Files of archiso's releng profile that only make sense on the live medium.
+live_only=(
+  etc/mkinitcpio.conf.d/archiso.conf
+  etc/systemd/journald.conf.d/volatile-storage.conf
+  etc/systemd/logind.conf.d/do-not-suspend.conf
+  etc/ssh/sshd_config.d/10-archiso.conf
+  etc/systemd/system/getty@tty1.service.d/autologin.conf
+  etc/systemd/system/etc-pacman.d-gnupg.mount
+  etc/systemd/system/pacman-init.service
+  etc/systemd/system/choose-mirror.service
+  etc/systemd/system/livecd-talk.service
+  etc/systemd/system/livecd-alsa-unmuter.service
+  etc/systemd/system/multi-user.target.wants/pacman-init.service
+  etc/systemd/system/multi-user.target.wants/choose-mirror.service
+  etc/systemd/system/multi-user.target.wants/livecd-talk.service
+  etc/systemd/system/multi-user.target.wants/hv_fcopy_daemon.service
+  etc/systemd/system/multi-user.target.wants/hv_kvp_daemon.service
+  etc/systemd/system/multi-user.target.wants/hv_vss_daemon.service
+  etc/systemd/system/multi-user.target.wants/vboxservice.service
+  etc/systemd/system/multi-user.target.wants/vmtoolsd.service
+  etc/systemd/system/multi-user.target.wants/vmware-vmblock-fuse.service
+  etc/systemd/system/sound.target.wants/livecd-alsa-unmuter.service
+  etc/systemd/system/cloud-init.target.wants
+  etc/pacman.d/hooks/uncomment-mirrors.hook
+  etc/motd
+  etc/machine-id
+  root/.automated_script.sh
+  root/.zlogin
+  usr/local/bin/Installation_guide
+  usr/local/bin/choose-mirror
+  usr/local/bin/livecd-sound
+  usr/local/share/livecd-sound
+)
+
+install_to() {
+  local disk="$1" esp root uuid line pct last=-1
+
+  [[ $EUID -eq 0 ]] || fail "must run as root"
+  [[ -d $live_root ]] || fail "not running from the Deckard live image"
+  [[ -d /sys/firmware/efi ]] || fail "the system was not booted in UEFI mode"
+  list_disks | cut -f1 | grep -qxF "$disk" ||
+    fail "$disk cannot be used (not listed by 'deckard-install list')"
+
+  trap 'echo "ERROR failed during: $step"; cleanup' ERR
+
+  progress 2 "Partitioning $disk"
+  wipefs -aq "$disk"
+  sgdisk --zap-all "$disk" >/dev/null
+  sgdisk -n1:0:+1G -t1:ef00 -c1:DECKARD_ESP \
+    -n2:0:0 -t2:8304 -c2:DECKARD "$disk" >/dev/null
+  partprobe "$disk" 2>/dev/null || true
+  udevadm settle
+  esp="$(part "$disk" 1)" root="$(part "$disk" 2)"
+
+  progress 5 "Formatting"
+  mkfs.fat -F32 -n DECKARD "$esp" >/dev/null
+  mkfs.ext4 -F -q -L deckard "$root"
+  mkdir -p "$target"
+  mount "$root" "$target"
+  mkdir -p "$target/boot"
+  mount "$esp" "$target/boot"
+
+  progress 8 "Copying the system"
+  # rsync's overall percentage is mapped to 8–80%. Its exit status is saved
+  # to a file: a process substitution would otherwise hide a failure.
+  local rsync_status
+  rsync_status="$(mktemp)"
+  while IFS= read -r line; do
+    if [[ $line =~ ([0-9]+)% ]]; then
+      pct=$((8 + BASH_REMATCH[1] * 72 / 100))
+      if ((pct != last)); then
+        echo "PROGRESS $pct Copying the system"
+        last=$pct
+      fi
+    fi
+  done < <({
+    rsync -aHAX --numeric-ids --info=progress2 --no-inc-recursive \
+      --exclude=/boot/ "$live_root/" "$target/"
+    echo $? >"$rsync_status"
+  } | tr '\r' '\n')
+  [[ "$(cat "$rsync_status")" == 0 ]] || {
+    cleanup
+    fail "copying the system failed (rsync exit $(cat "$rsync_status"))"
+  }
+  rm -f "$rsync_status"
+
+  progress 82 "Configuring the system"
+  for path in "${live_only[@]}"; do
+    rm -rf "${target:?}/$path"
+  done
+  cp "$boot_media/arch/boot/x86_64/vmlinuz-linux" "$target/boot/vmlinuz-linux"
+  cat >"$target/etc/mkinitcpio.d/linux.preset" <<'EOF'
+# mkinitcpio preset for the 'linux' package (written by deckard-install)
+ALL_kver="/boot/vmlinuz-linux"
+PRESETS=('default' 'fallback')
+default_image="/boot/initramfs-linux.img"
+fallback_image="/boot/initramfs-linux-fallback.img"
+fallback_options="-S autodetect"
+EOF
+  genfstab -U "$target" >"$target/etc/fstab"
+  # The ESP holds the boot loader's random seed: keep it private (bootctl
+  # warns about a "security hole" with the default 0022 masks).
+  sed -i '/[[:space:]]\/boot[[:space:]]\+vfat/ s/fmask=[0-9]*,dmask=[0-9]*/fmask=0077,dmask=0077/' \
+    "$target/etc/fstab"
+
+  progress 86 "Building the initramfs"
+  arch-chroot "$target" mkinitcpio -P >/dev/null
+
+  progress 94 "Installing the boot loader"
+  bootctl --esp-path="$target/boot" install >/dev/null 2>&1
+  uuid="$(blkid -s UUID -o value "$root")"
+  mkdir -p "$target/boot/loader/entries"
+  cat >"$target/boot/loader/loader.conf" <<EOF
+default deckard.conf
+timeout 0
+editor no
+EOF
+  for kind in "" "-fallback"; do
+    cat >"$target/boot/loader/entries/deckard${kind}.conf" <<EOF
+title   Deckard${kind:+ (fallback initramfs)}
+linux   /vmlinuz-linux
+initrd  /initramfs-linux${kind}.img
+options root=UUID=$uuid rw quiet loglevel=3
+EOF
+  done
+
+  progress 97 "Initializing the package keyring"
+  arch-chroot "$target" pacman-key --init >/dev/null 2>&1
+  arch-chroot "$target" pacman-key --populate archlinux >/dev/null 2>&1
+
+  progress 99 "Finishing"
+  trap - ERR
+  cleanup
+  echo "DONE"
+}
+
+case "${1:-}" in
+  list)
+    list_disks
+    ;;
+  install)
+    [[ -n ${2:-} && ${3:-} == --yes ]] ||
+      fail "usage: deckard-install install <disk> --yes (this erases the disk)"
+    install_to "$2"
+    ;;
+  *)
+    echo "usage: deckard-install list | install <disk> --yes" >&2
+    exit 2
+    ;;
+esac

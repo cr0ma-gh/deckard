@@ -58,3 +58,34 @@ jobs:
           name: boot-screenshots
           path: screenshots/
           retention-days: 14
+
+  install-test:
+    name: Install test (QEMU)
+    needs: iso
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: deckard-iso
+          path: out
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' |
+            sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - name: Install QEMU
+        run: sudo apt-get update && sudo apt-get install -y qemu-system-x86 qemu-utils ovmf socat
+      - name: Install to a virtual disk and boot it
+        run: bash scripts/install-test.sh out/*.iso install-test
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: install-test
+          path: |
+            install-test/*.png
+            install-test/*.log
+            install-test/installed/
+          retention-days: 14

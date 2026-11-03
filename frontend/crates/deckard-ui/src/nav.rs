@@ -32,6 +32,8 @@ pub enum Action {
     Quit,
     /// Switch to another session (e.g. Steam Big Picture).
     SwitchSession,
+    /// Open the installer (only offered on the live image).
+    OpenInstaller,
     /// Flip or cycle a setting.
     Toggle(Setting),
     /// Show a short message (e.g. why a game cannot start).
@@ -65,6 +67,8 @@ pub struct SettingsView {
     pub volume: u8,
     /// Whether the "Switch to Steam" item should appear.
     pub session_switching: bool,
+    /// Whether "Install to disk" should appear (running from the live image).
+    pub installer_available: bool,
 }
 
 impl Default for SettingsView {
@@ -75,6 +79,7 @@ impl Default for SettingsView {
             shader: "none".into(),
             volume: 100,
             session_switching: false,
+            installer_available: false,
         }
     }
 }
@@ -188,6 +193,16 @@ impl Menu {
                 sublabel: Some(strings.switch_to_steam_info.clone()),
                 thumbnail: None,
                 action: Some(Action::SwitchSession),
+            });
+        }
+
+        if settings.installer_available {
+            categories[0].items.push(Item {
+                id: "install".into(),
+                label: strings.install_disk.clone(),
+                sublabel: Some(strings.install_disk_info.clone()),
+                thumbnail: None,
+                action: Some(Action::OpenInstaller),
             });
         }
 
@@ -516,6 +531,7 @@ mod tests {
             shader: "none".into(),
             volume: 100,
             session_switching: false,
+            installer_available: false,
         };
         m.replace(Menu::build(&lib, &strings, Path::new("roms"), &on));
         assert_eq!(m.selected_category(), 0);
@@ -561,5 +577,22 @@ mod tests {
         assert_eq!(badge_text("gbc"), "GBC");
         assert_eq!(badge_text("neogeo"), "NEOG");
         assert_eq!(accent_color("snes"), accent_color("snes"));
+    }
+
+    #[test]
+    fn install_item_only_on_the_live_image() {
+        let strings = Strings::load("en");
+        let lib = library();
+        let has_install = |settings: &SettingsView| {
+            Menu::build(&lib, &strings, Path::new("roms"), settings).categories[0]
+                .items
+                .iter()
+                .any(|i| i.action == Some(Action::OpenInstaller))
+        };
+        assert!(!has_install(&SettingsView::default()));
+        assert!(has_install(&SettingsView {
+            installer_available: true,
+            ..Default::default()
+        }));
     }
 }

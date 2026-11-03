@@ -66,6 +66,23 @@ log (greetd, sessione Deckard, errori) sulla seriale e fallisce se il processo
 `deckard` non è in esecuzione. Il workflow ISO lo esegue dopo ogni build
 (artifact `boot-screenshots`). Verificato: l'ISO arriva al menu di Deckard.
 
+## Installazione su disco
+
+Dall'immagine live: Impostazioni → **Installa su disco**. Si sceglie un disco
+(SSD interno o microSD, almeno 16 GB), si conferma **due volte** e il disco
+viene cancellato e preparato (ESP + ext4, systemd-boot). Alla fine: togli la
+chiavetta e riavvia. Lo stesso installer si usa da terminale:
+
+```bash
+sudo deckard-install list
+sudo deckard-install install /dev/nvme0n1 --yes   # CANCELLA il disco
+```
+
+`scripts/install-test.sh <iso> <cartella>` prova tutto in QEMU: installa su un
+disco virtuale, riavvia dal disco e controlla che Deckard parta (anche nel
+workflow ISO, job `install-test`). Scegliendo l'SSD interno SteamOS viene
+cancellato; la microSD lascia l'SSD intatto.
+
 ## Da verificare sul Deck
 
 - Orientamento del pannello in gamescope (il pannello LCD è verticale):

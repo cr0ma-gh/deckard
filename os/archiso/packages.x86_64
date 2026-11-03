@@ -38,3 +38,11 @@ libretro-nestopia
 libretro-beetle-psx
 
 sudo
+
+# Installer (deckard-install): partitioning, file systems, copy, boot loader
+rsync
+gptfdisk
+parted
+dosfstools
+e2fsprogs
+arch-install-scripts
