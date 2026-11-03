@@ -356,7 +356,10 @@ Se aggiungi o cambi comandi, aggiorna questa sezione.
   core va resa osservabile nel core di test e coperta lì. `unwrap` è ammesso nei
   test (`clippy.toml`; nei file di test di integrazione serve
   `#![allow(clippy::unwrap_used)]`).
-- Script shell: `bash` con `set -euo pipefail`, verificati con `shellcheck`.
+- Script shell: `bash` con `set -euo pipefail`, verificati con `shellcheck` prima del
+  push (è installato in WSL): `shellcheck -x --source-path=SCRIPTDIR scripts/*.sh
+  session/deckard-session session/*.sh installer/deckard-install
+  os/archiso/profiledef.overrides.sh` (lo stesso comando della CI).
 
 ## 8. Lingua `[CONDIVISO]`
 

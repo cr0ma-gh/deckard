@@ -28,7 +28,7 @@ find_ovmf
 find_accel
 
 case "$image" in
-  *.qcow2) media=(-drive file="$image",if=virtio,format=qcow2) ;;
+  *.qcow2) media=(-drive "file=$image,if=virtio,format=qcow2") ;;
   *) media=(-cdrom "$image" -boot d) ;;
 esac
 
