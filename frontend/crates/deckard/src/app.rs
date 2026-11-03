@@ -12,6 +12,7 @@ use deckard_input::{Hotkeys, Input, MenuButtons, key_code};
 use deckard_library::Library;
 use deckard_system::SessionTarget;
 use deckard_system::installer::{self as system_installer, InstallJob};
+use deckard_system::wifi::{self as system_wifi, WifiWorker};
 use deckard_ui::UiRenderer;
 use deckard_ui::i18n::{Strings, fill, next_language};
 use deckard_ui::installer::{
@@ -21,6 +22,7 @@ use deckard_ui::layout::{Hints, MenuView, QuickHints, Toast, game_overlay, layou
 use deckard_ui::nav::{Action, Menu, Setting, SettingsView};
 use deckard_ui::quick::{QuickAction, QuickMenu};
 use deckard_ui::repeat::{Held, Repeater};
+use deckard_ui::wifi::{WifiAction, WifiNetwork, WifiPage, WifiUpdate, wifi_layers};
 use deckard_video::{Presented, Renderer, Scaling};
 use winit::application::ApplicationHandler;
 use winit::dpi::LogicalSize;
@@ -61,6 +63,7 @@ impl Context {
             volume: self.config.audio.volume,
             session_switching: deckard_system::session_switching_available(),
             installer_available: system_installer::is_live_system(),
+            wifi_available: system_wifi::available(),
         }
     }
 
@@ -105,6 +108,9 @@ struct App {
     /// "Install to disk" dialog over the menu, and the running installation.
     installer: Option<Installer>,
     install_job: Option<InstallJob>,
+    /// Wi-Fi page over the menu, and the thread that talks to NetworkManager.
+    wifi: Option<WifiPage>,
+    wifi_worker: Option<WifiWorker>,
     input: Input,
     audio: Option<AudioOutput>,
     running: Option<Running>,
@@ -148,6 +154,8 @@ pub fn run(ctx: Context, game: Option<Game>, options: Options) -> anyhow::Result
         game_toast: None,
         installer: None,
         install_job: None,
+        wifi: None,
+        wifi_worker: None,
         input: Input::new(),
         audio,
         running: None,
@@ -286,6 +294,12 @@ impl App {
                 }
                 continue;
             }
+            if let Some(page) = self.wifi.as_mut() {
+                if let Some(action) = page.handle(nav, &self.strings) {
+                    self.perform_wifi(action);
+                }
+                continue;
+            }
             if let Some(action) = self.menu.handle(nav) {
                 self.perform(action, event_loop);
                 if !matches!(self.mode, Mode::Menu) {
@@ -294,6 +308,7 @@ impl App {
             }
         }
         self.poll_installer();
+        self.poll_wifi();
 
         self.view.update(&self.menu, dt);
         let hints = self.hints();
@@ -308,6 +323,14 @@ impl App {
             gpu.width as f32,
             gpu.height as f32,
         );
+        if let Some(page) = &self.wifi {
+            scene.layers.extend(wifi_layers(
+                page,
+                &self.strings,
+                gpu.width as f32,
+                gpu.height as f32,
+            ));
+        }
         if let Some(installer) = &self.installer {
             scene.layers.push(installer_layer(
                 installer,
@@ -370,6 +393,108 @@ impl App {
         }
     }
 
+    /// Opens the Wi-Fi page and starts a scan.
+    fn open_wifi(&mut self) {
+        let worker = self.wifi_worker.get_or_insert_with(WifiWorker::start);
+        worker.request(system_wifi::Request::Scan);
+        self.wifi = Some(WifiPage::new());
+    }
+
+    fn perform_wifi(&mut self, action: WifiAction) {
+        let request = match action {
+            WifiAction::Close => {
+                self.wifi = None;
+                return;
+            }
+            WifiAction::Scan => system_wifi::Request::Scan,
+            WifiAction::Connect { ssid, password } => {
+                tracing::info!(ssid, "connecting to Wi-Fi");
+                system_wifi::Request::Connect { ssid, password }
+            }
+            WifiAction::Disconnect => system_wifi::Request::Disconnect,
+        };
+        if let Some(worker) = &self.wifi_worker {
+            worker.request(request);
+        }
+    }
+
+    /// Forwards Wi-Fi results to the page (and keeps the list fresh).
+    fn poll_wifi(&mut self) {
+        let Some(worker) = &self.wifi_worker else {
+            return;
+        };
+        let replies = worker.poll();
+        for reply in replies {
+            let update = match reply {
+                system_wifi::Reply::Networks(networks) => WifiUpdate::Networks(
+                    networks
+                        .into_iter()
+                        .map(|n| WifiNetwork {
+                            ssid: n.ssid,
+                            signal: n.signal,
+                            secured: n.secured,
+                            active: n.active,
+                        })
+                        .collect(),
+                ),
+                system_wifi::Reply::Connected(ssid) => {
+                    self.view
+                        .show_toast(fill(&self.strings.wifi_connected, &[("ssid", &ssid)]));
+                    WifiUpdate::Connected(ssid)
+                }
+                system_wifi::Reply::Disconnected => WifiUpdate::Disconnected,
+                system_wifi::Reply::Error(error) => {
+                    tracing::warn!("Wi-Fi: {error}");
+                    WifiUpdate::Error(error)
+                }
+            };
+            let follow_up = self
+                .wifi
+                .as_mut()
+                .and_then(|page| page.update(update, &self.strings));
+            if let Some(action) = follow_up {
+                self.perform_wifi(action);
+            }
+        }
+    }
+
+    /// Physical keyboard while the on-screen keyboard is open: type into the
+    /// password field instead of driving the menu. Returns true if consumed.
+    fn wifi_keyboard_input(&mut self, event: &winit::event::KeyEvent) -> bool {
+        let Some(page) = self.wifi.as_mut().filter(|p| p.keyboard_open()) else {
+            return false;
+        };
+        if event.state != ElementState::Pressed {
+            // Releases always reach the normal input, so no key stays "held".
+            return false;
+        }
+        use winit::keyboard::{Key, NamedKey};
+        match &event.logical_key {
+            Key::Named(NamedKey::Enter) => {
+                if let Some(action) = page.submit() {
+                    self.perform_wifi(action);
+                }
+            }
+            Key::Named(NamedKey::Escape) => page.cancel_keyboard(),
+            Key::Named(NamedKey::Backspace) => page.backspace(),
+            // Arrows still move on the on-screen keyboard.
+            Key::Named(
+                NamedKey::ArrowUp
+                | NamedKey::ArrowDown
+                | NamedKey::ArrowLeft
+                | NamedKey::ArrowRight,
+            ) => return false,
+            _ => {
+                if let Some(text) = &event.text {
+                    for c in text.chars() {
+                        page.type_char(c);
+                    }
+                }
+            }
+        }
+        true
+    }
+
     /// Forwards the running installation's progress to the dialog.
     fn poll_installer(&mut self) {
         let (Some(job), Some(installer)) = (self.install_job.as_mut(), self.installer.as_mut())
@@ -392,6 +517,7 @@ impl App {
             Action::Quit => event_loop.exit(),
             Action::SwitchSession => self.switch_session(event_loop),
             Action::OpenInstaller => self.open_installer(),
+            Action::OpenWifi => self.open_wifi(),
             Action::Notice(message) => self.view.show_toast(message),
             Action::Rescan => {
                 self.ctx.library = Library::scan(&self.ctx.config, &self.ctx.paths);
@@ -840,6 +966,9 @@ impl ApplicationHandler for App {
             }
             WindowEvent::Focused(false) => self.input.clear_keyboard(),
             WindowEvent::KeyboardInput { event, .. } => {
+                if self.wifi_keyboard_input(&event) {
+                    return;
+                }
                 if let Some(code) = key_code(event.physical_key, &event.logical_key)
                     && !event.repeat
                 {

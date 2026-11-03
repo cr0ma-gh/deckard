@@ -83,6 +83,14 @@ disco virtuale, riavvia dal disco e controlla che Deckard parta (anche nel
 workflow ISO, job `install-test`). Scegliendo l'SSD interno SteamOS viene
 cancellato; la microSD lascia l'SSD intatto.
 
+## Wi-Fi
+
+Impostazioni → **Wi-Fi**: elenco delle reti, A per connettersi (le reti
+protette aprono la tastiera a schermo), A sulla rete connessa per
+disconnettersi. La rete gestita da NetworkManager viene ricordata e ricollegata
+all'avvio. Da terminale: `nmcli device wifi list`, `nmcli device wifi connect
+<rete> password <password>`.
+
 ## Da verificare sul Deck
 
 - Orientamento del pannello in gamescope (il pannello LCD è verticale):

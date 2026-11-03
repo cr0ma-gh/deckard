@@ -9,10 +9,12 @@
 
 pub mod i18n;
 pub mod installer;
+pub mod keyboard;
 pub mod layout;
 pub mod nav;
 pub mod quick;
 pub mod render;
 pub mod repeat;
+pub mod wifi;
 
 pub use render::UiRenderer;

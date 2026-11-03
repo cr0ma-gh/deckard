@@ -282,6 +282,11 @@ Comandi non gestiti: restituire `false` e loggare una volta sola a livello `debu
   disco reale durante lo sviluppo: si prova solo in QEMU (`scripts/install-test.sh`).
   Elenco dei file solo-live rimossi in `live_only` dentro lo script: aggiornalo
   se cambia il profilo releng.
+- **Rete** (ADR 0011): NetworkManager (non networkd/iwd), comandato con `nmcli`
+  dall'utente `deck` grazie alla regola polkit per `wheel`. Pagina Wi-Fi in
+  `deckard-ui/src/wifi.rs`, tastiera a schermo riusabile in
+  `deckard-ui/src/keyboard.rs`, backend in `deckard-system/src/wifi.rs`
+  (`DECKARD_FAKE_WIFI=1` per provarla senza Wi-Fi).
 
 ## 6. Ambiente di sviluppo e comandi `[CONDIVISO]`
 
@@ -410,7 +415,7 @@ Se aggiungi o cambi comandi, aggiorna questa sezione.
 7. **Fase 6** — Installazione e trasferimento dei contenuti (ordine scelto dall'utente):
    - **6a** ✅ Installer su disco intero (SSD o microSD, ext4, systemd-boot) dal menu
      con doppia conferma; testato end-to-end in QEMU (ADR 0010);
-   - **6b** Configurazione Wi-Fi dal menu (serve una tastiera a schermo);
+   - **6b** ✅ Wi-Fi dal menu con NetworkManager e tastiera a schermo (ADR 0011);
    - **6c** Cartella condivisa Samba attivabile dalle Impostazioni;
    - **6d** Caricamento di giochi/BIOS/core da browser (piccolo server web in Deckard).
    La 5c (core hardware) è rimandata a dopo la Fase 6, su richiesta dell'utente.

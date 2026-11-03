@@ -1,0 +1,9 @@
+// Deckard: users in "wheel" (the "deck" user) may manage networks without a
+// password prompt. There is no polkit agent in the Deckard session to ask for
+// one, and NetworkManager needs this to save new Wi-Fi networks.
+polkit.addRule(function (action, subject) {
+  if (action.id.indexOf("org.freedesktop.NetworkManager.") === 0 &&
+      subject.isInGroup("wheel")) {
+    return polkit.Result.YES;
+  }
+});

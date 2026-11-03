@@ -8,6 +8,7 @@ use std::path::{Path, PathBuf};
 
 pub mod installer;
 mod session;
+pub mod wifi;
 
 pub use session::SessionTarget;
 

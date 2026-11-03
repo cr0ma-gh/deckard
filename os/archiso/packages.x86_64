@@ -46,3 +46,7 @@ parted
 dosfstools
 e2fsprogs
 arch-install-scripts
+
+# Networking: NetworkManager (Wi-Fi from the menu), polkit for permissions
+networkmanager
+polkit

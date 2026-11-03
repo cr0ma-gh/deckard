@@ -69,10 +69,12 @@ if [[ ${DECKARD_BOOT_DIAG:-0} == 1 ]]; then
     "echo DIAG-id >/dev/ttyS0; id deck >/dev/ttyS0 2>&1" \
     "echo DIAG-greetd >/dev/ttyS0; journalctl -b -u greetd -o short --no-pager >/dev/ttyS0 2>&1" \
     "echo DIAG-session.log >/dev/ttyS0; cat /home/deck/.local/state/deckard/session.log >/dev/ttyS0 2>&1" \
+    "echo DIAG-network >/dev/ttyS0; nmcli -t general status >/dev/ttyS0 2>&1; runuser -u deck -- nmcli -t general permissions >/dev/ttyS0 2>&1" \
     "echo DIAG-errors >/dev/ttyS0; journalctl -b -p err -o short --no-pager >/dev/ttyS0 2>&1" \
     "echo DIAG-end >/dev/ttyS0"; do
     type_text "$cmd"
-    sleep 2
+    # Let the command finish: keys typed while it runs can get lost.
+    sleep 5
   done
   sleep 3
   shoot diag

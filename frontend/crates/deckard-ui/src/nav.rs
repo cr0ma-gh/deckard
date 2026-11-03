@@ -34,6 +34,8 @@ pub enum Action {
     SwitchSession,
     /// Open the installer (only offered on the live image).
     OpenInstaller,
+    /// Open the Wi-Fi page.
+    OpenWifi,
     /// Flip or cycle a setting.
     Toggle(Setting),
     /// Show a short message (e.g. why a game cannot start).
@@ -69,6 +71,8 @@ pub struct SettingsView {
     pub session_switching: bool,
     /// Whether "Install to disk" should appear (running from the live image).
     pub installer_available: bool,
+    /// Whether the "Wi-Fi" item should appear.
+    pub wifi_available: bool,
 }
 
 impl Default for SettingsView {
@@ -80,6 +84,7 @@ impl Default for SettingsView {
             volume: 100,
             session_switching: false,
             installer_available: false,
+            wifi_available: false,
         }
     }
 }
@@ -194,6 +199,24 @@ impl Menu {
                 thumbnail: None,
                 action: Some(Action::SwitchSession),
             });
+        }
+
+        if settings.wifi_available {
+            let after_language = categories[0]
+                .items
+                .iter()
+                .position(|i| i.id == "language")
+                .map_or(0, |p| p + 1);
+            categories[0].items.insert(
+                after_language,
+                Item {
+                    id: "wifi".into(),
+                    label: strings.wifi.clone(),
+                    sublabel: Some(strings.wifi_info.clone()),
+                    thumbnail: None,
+                    action: Some(Action::OpenWifi),
+                },
+            );
         }
 
         if settings.installer_available {
@@ -532,6 +555,7 @@ mod tests {
             volume: 100,
             session_switching: false,
             installer_available: false,
+            wifi_available: false,
         };
         m.replace(Menu::build(&lib, &strings, Path::new("roms"), &on));
         assert_eq!(m.selected_category(), 0);
@@ -594,5 +618,25 @@ mod tests {
             installer_available: true,
             ..Default::default()
         }));
+    }
+
+    #[test]
+    fn wifi_item_follows_language() {
+        let strings = Strings::load("en");
+        let lib = library();
+        let settings = SettingsView {
+            wifi_available: true,
+            ..Default::default()
+        };
+        let menu = Menu::build(&lib, &strings, Path::new("roms"), &settings);
+        let ids: Vec<_> = menu.categories[0]
+            .items
+            .iter()
+            .map(|i| i.id.as_str())
+            .collect();
+        let lang = ids.iter().position(|id| *id == "language").unwrap();
+        assert_eq!(ids[lang + 1], "wifi");
+        let without = Menu::build(&lib, &strings, Path::new("roms"), &SettingsView::default());
+        assert!(without.categories[0].items.iter().all(|i| i.id != "wifi"));
     }
 }

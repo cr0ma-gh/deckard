@@ -107,6 +107,19 @@ link /usr/lib/systemd/user/pipewire.socket etc/systemd/user/sockets.target.wants
 link /usr/lib/systemd/user/pipewire-pulse.socket etc/systemd/user/sockets.target.wants/pipewire-pulse.socket
 link /usr/lib/systemd/user/wireplumber.service etc/systemd/user/pipewire.service.wants/wireplumber.service
 
+# Networking: NetworkManager replaces releng's systemd-networkd + iwd (two
+# managers must not fight over the same interfaces). resolved stays enabled.
+for unit in multi-user.target.wants/systemd-networkd.service \
+  multi-user.target.wants/iwd.service \
+  sockets.target.wants/systemd-networkd.socket \
+  network-online.target.wants/systemd-networkd-wait-online.service \
+  dbus-org.freedesktop.network1.service; do
+  rm -f "$profile/airootfs/etc/systemd/system/$unit"
+done
+link /usr/lib/systemd/system/NetworkManager.service etc/systemd/system/multi-user.target.wants/NetworkManager.service
+link /usr/lib/systemd/system/NetworkManager-dispatcher.service etc/systemd/system/dbus-org.freedesktop.nm-dispatcher.service
+link /usr/lib/systemd/system/NetworkManager-wait-online.service etc/systemd/system/network-online.target.wants/NetworkManager-wait-online.service
+
 # ---------------------------------------------------------------- 3. image
 step "Running mkarchiso"
 mkarchiso -v -w "$work/iso" -o "$out_dir" "$profile"
