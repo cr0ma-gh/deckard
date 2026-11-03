@@ -24,14 +24,40 @@ progress() {
 }
 fail() {
   echo "ERROR $*"
+  # Leave no half-installed disk mounted.
+  if mountpoint -q "$target" 2>/dev/null; then cleanup; fi
   exit 1
 }
 
+# Value of a kernel command line option (archisosearchuuid=..., etc.).
+cmdline_arg() {
+  local arg
+  for arg in $(</proc/cmdline); do
+    if [[ $arg == "$1="* ]]; then
+      echo "${arg#*=}"
+      return
+    fi
+  done
+}
+
 # The disk the live system was booted from (never offered as a target).
+# With copytoram (archiso's default when there is enough memory, e.g. on the
+# Deck) the boot medium is no longer mounted, so it is also found from the
+# kernel command line.
 boot_disk() {
-  local src parent
+  local src parent value
   src="$(findmnt -no SOURCE "$boot_media" 2>/dev/null || true)"
-  [[ -n $src ]] || return 0
+  if [[ -z $src ]]; then
+    if value="$(cmdline_arg archisosearchuuid)" && [[ -n $value ]]; then
+      src="/dev/disk/by-uuid/$value"
+    elif value="$(cmdline_arg archisolabel)" && [[ -n $value ]]; then
+      src="/dev/disk/by-label/$value"
+    elif value="$(cmdline_arg archisodevice)" && [[ -n $value ]]; then
+      src="$value"
+    fi
+    [[ -e $src ]] || return 0
+    src="$(realpath "$src")"
+  fi
   parent="$(lsblk -no PKNAME "$src" 2>/dev/null | head -n1 || true)"
   if [[ -n $parent ]]; then echo "/dev/$parent"; else echo "$src"; fi
 }
@@ -106,7 +132,11 @@ install_to() {
   list_disks | cut -f1 | grep -qxF "$disk" ||
     fail "$disk cannot be used (not listed by 'deckard-install list')"
 
-  trap 'echo "ERROR failed during: $step"; cleanup' ERR
+  # Command errors go to a log; the last line is shown with the failed step.
+  local log=/var/log/deckard-install.log
+  : >"$log"
+  exec 2>>"$log"
+  trap 'echo "ERROR failed during: $step: $(tail -n1 "$log")"; cleanup' ERR
 
   progress 2 "Partitioning $disk"
   wipefs -aq "$disk"
@@ -153,7 +183,12 @@ install_to() {
   for path in "${live_only[@]}"; do
     rm -rf "${target:?}/$path"
   done
-  cp "$boot_media/arch/boot/x86_64/vmlinuz-linux" "$target/boot/vmlinuz-linux"
+  # The kernel image ships with its modules (the boot medium may be gone:
+  # copytoram unmounts it).
+  local kernels=("$target"/usr/lib/modules/*/vmlinuz)
+  [[ ${#kernels[@]} -eq 1 && -f ${kernels[0]} ]] ||
+    fail "expected one kernel in /usr/lib/modules, found ${#kernels[@]}"
+  cp "${kernels[0]}" "$target/boot/vmlinuz-linux"
   cat >"$target/etc/mkinitcpio.d/linux.preset" <<'EOF'
 # mkinitcpio preset for the 'linux' package (written by deckard-install)
 ALL_kver="/boot/vmlinuz-linux"

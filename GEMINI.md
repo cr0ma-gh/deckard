@@ -292,6 +292,10 @@ Comandi non gestiti: restituire `false` e loggare una volta sola a livello `debu
   disco reale durante lo sviluppo: si prova solo in QEMU (`scripts/install-test.sh`).
   Elenco dei file solo-live rimossi in `live_only` dentro lo script: aggiornalo
   se cambia il profilo releng.
+  Attenzione a `copytoram` (attivo sul Deck): la chiavetta viene smontata dopo
+  l'avvio, quindi l'installer non deve leggere nulla da `/run/archiso/bootmnt`.
+  Il test (`install-test.sh`) avvia l'ISO da USB con 6 GB per coprire questo
+  caso.
 - **Rete** (ADR 0011): NetworkManager (non networkd/iwd), comandato con `nmcli`
   dall'utente `deck` grazie alla regola polkit per `wheel`. Pagina Wi-Fi in
   `deckard-ui/src/wifi.rs`, tastiera a schermo riusabile in stile SteamOS

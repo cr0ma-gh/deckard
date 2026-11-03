@@ -35,6 +35,25 @@ salvataggi, configurazione) serve installarlo su un disco del Deck.
    del workflow ISO): installa su un disco virtuale vuoto, spegne, riavvia dal
    solo disco e verifica che Deckard sia in esecuzione.
 
+## Aggiornamento: copytoram
+
+Sul Deck la prima installazione si fermava a "Configuring the system". Con
+abbastanza RAM archiso copia il sistema in memoria (`copytoram=auto`) e
+smonta la chiavetta, quindi `/run/archiso/bootmnt` non esiste più. Le
+conseguenze erano due:
+
+- il kernel non si trovava più sulla chiavetta;
+- la chiavetta stessa compariva tra i dischi installabili.
+
+In QEMU non succedeva perché l'ISO partiva come CD con 4 GB. Correzioni:
+
+- il kernel si prende da `/usr/lib/modules/<versione>/vmlinuz` del sistema copiato;
+- il disco di avvio si riconosce anche da `archisosearchuuid` sulla riga di comando del kernel;
+- gli errori riportano l'ultima riga di `/var/log/deckard-install.log`;
+- il test di installazione avvia l'ISO da una chiavetta USB virtuale con 6 GB,
+  così `copytoram` scatta come sul Deck, e fallisce se la chiavetta viene
+  offerta come disco.
+
 ## Conseguenze
 
 - Il sistema installato ha, come la live, l'utente `deck` senza password con
