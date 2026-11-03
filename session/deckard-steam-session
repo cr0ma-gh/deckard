@@ -1,0 +1,38 @@
+#!/usr/bin/env bash
+# Runs Steam inside gamescope (started by deckard-session) and restarts it
+# when it exits on its own: after an update the Steam client quits and expects
+# the session to start it again, like SteamOS does. The loop ends when a
+# session switch is requested (next-session written by switch-to-deckard or
+# steamos-session-select) or when Steam keeps failing right after start.
+set -euo pipefail
+
+state_dir="${XDG_STATE_HOME:-$HOME/.local/state}/deckard"
+next_session_file="$state_dir/next-session"
+mkdir -p "$state_dir"
+
+# Exits shorter than this count as failures; this many in a row give up.
+min_runtime=20
+max_failures=3
+failures=0
+
+while true; do
+  started=$SECONDS
+  status=0
+  steam -gamepadui -steamos3 -steampal -steamdeck || status=$?
+  echo "steam exited with status $status after $((SECONDS - started))s"
+
+  if [[ -f $next_session_file ]]; then
+    break
+  fi
+  if ((SECONDS - started < min_runtime)); then
+    failures=$((failures + 1))
+  else
+    failures=0
+  fi
+  if ((failures >= max_failures)); then
+    echo "steam keeps exiting right after start, going back to deckard"
+    echo deckard >"$next_session_file"
+    break
+  fi
+  echo "restarting steam"
+done

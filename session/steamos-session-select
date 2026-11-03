@@ -1,0 +1,12 @@
+#!/usr/bin/env bash
+# Steam in SteamOS mode (-steamos3) runs this command for "Switch to Desktop"
+# in its power menu. On Deckard the "desktop" is the Deckard frontend: write
+# the next session and ask Steam to quit, then deckard-session starts Deckard.
+#
+#   steamos-session-select [plasma|gamescope|...]   # argument ignored
+set -euo pipefail
+
+state_dir="${XDG_STATE_HOME:-$HOME/.local/state}/deckard"
+mkdir -p "$state_dir"
+echo deckard >"$state_dir/next-session"
+steam -shutdown || true

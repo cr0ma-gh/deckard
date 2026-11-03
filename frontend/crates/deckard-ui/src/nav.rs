@@ -36,6 +36,10 @@ pub enum Action {
     OpenInstaller,
     /// Open the Wi-Fi page.
     OpenWifi,
+    /// Restart the device.
+    Reboot,
+    /// Turn the device off.
+    PowerOff,
     /// Flip or cycle a setting.
     Toggle(Setting),
     /// Show a short message (e.g. why a game cannot start).
@@ -73,6 +77,8 @@ pub struct SettingsView {
     pub installer_available: bool,
     /// Whether the "Wi-Fi" item should appear.
     pub wifi_available: bool,
+    /// Whether "Restart" and "Power off" should appear.
+    pub power_available: bool,
 }
 
 impl Default for SettingsView {
@@ -85,6 +91,7 @@ impl Default for SettingsView {
             session_switching: false,
             installer_available: false,
             wifi_available: false,
+            power_available: false,
         }
     }
 }
@@ -227,6 +234,31 @@ impl Menu {
                 thumbnail: None,
                 action: Some(Action::OpenInstaller),
             });
+        }
+
+        if settings.power_available {
+            for (id, label, info, action) in [
+                (
+                    "reboot",
+                    &strings.reboot,
+                    &strings.reboot_info,
+                    Action::Reboot,
+                ),
+                (
+                    "power_off",
+                    &strings.power_off,
+                    &strings.power_off_info,
+                    Action::PowerOff,
+                ),
+            ] {
+                categories[0].items.push(Item {
+                    id: id.into(),
+                    label: label.clone(),
+                    sublabel: Some(info.clone()),
+                    thumbnail: None,
+                    action: Some(action),
+                });
+            }
         }
 
         for (si, system) in library.systems.iter().enumerate() {
@@ -556,6 +588,7 @@ mod tests {
             session_switching: false,
             installer_available: false,
             wifi_available: false,
+            power_available: false,
         };
         m.replace(Menu::build(&lib, &strings, Path::new("roms"), &on));
         assert_eq!(m.selected_category(), 0);
@@ -638,5 +671,35 @@ mod tests {
         assert_eq!(ids[lang + 1], "wifi");
         let without = Menu::build(&lib, &strings, Path::new("roms"), &SettingsView::default());
         assert!(without.categories[0].items.iter().all(|i| i.id != "wifi"));
+    }
+
+    #[test]
+    fn power_items_come_last_when_available() {
+        let strings = Strings::load("it");
+        let lib = library();
+        let settings = SettingsView {
+            power_available: true,
+            ..Default::default()
+        };
+        let mut menu = Menu::build(&lib, &strings, Path::new("roms"), &settings);
+        let items = &menu.categories[0].items;
+        let n = items.len();
+        assert_eq!(items[n - 2].label, "Riavvia");
+        assert_eq!(items[n - 1].action, Some(Action::PowerOff));
+        // The menu opens on the first system: go to Settings, then to the end.
+        while menu.selected_category() != 0 {
+            menu.handle(Nav::Left);
+        }
+        for _ in 0..n {
+            menu.handle(Nav::Down);
+        }
+        assert_eq!(menu.handle(Nav::Confirm), Some(Action::PowerOff));
+        let without = Menu::build(&lib, &strings, Path::new("roms"), &SettingsView::default());
+        assert!(
+            without.categories[0]
+                .items
+                .iter()
+                .all(|i| i.action != Some(Action::Reboot))
+        );
     }
 }

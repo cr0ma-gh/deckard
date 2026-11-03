@@ -56,14 +56,15 @@ fn wave(uv: vec2<f32>, speed: f32, freq: f32, offset: f32, height: f32) -> f32 {
 
 @fragment
 fn bg_fs(in: BgOut) -> @location(0) vec4<f32> {
-    let top = vec3<f32>(0.05, 0.09, 0.22);
-    let bottom = vec3<f32>(0.18, 0.08, 0.30);
+    // Steam Deck tones (see theme.rs): dark blue-grey, Steam blue glow.
+    let top = vec3<f32>(0.090, 0.114, 0.145);
+    let bottom = vec3<f32>(0.043, 0.055, 0.071);
     var c = mix(top, bottom, in.uv.y);
     // Light vignette.
     let v = distance(in.uv, vec2<f32>(0.45, 0.4));
     c *= 1.15 - v * 0.45;
     let glow = wave(in.uv, 0.22, 3.1, 0.0, 0.05) + wave(in.uv, 0.17, 2.4, 0.03, 0.04);
-    c += vec3<f32>(0.55, 0.70, 1.0) * glow;
+    c += vec3<f32>(0.10, 0.62, 1.0) * glow * 0.55;
     return vec4<f32>(to_target(c), 1.0);
 }
 

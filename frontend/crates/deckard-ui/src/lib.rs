@@ -15,6 +15,7 @@ pub mod nav;
 pub mod quick;
 pub mod render;
 pub mod repeat;
+pub mod theme;
 pub mod wifi;
 
 pub use render::UiRenderer;

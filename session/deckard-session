@@ -24,6 +24,8 @@ fi
 log="$state_dir/session.log"
 exec >> "$log" 2>&1
 echo "=== deckard-session $(date --iso-8601=seconds)"
+# Tells Deckard it runs as the device session (enables power off/reboot).
+export DECKARD_SESSION=1
 
 next_session_file="$state_dir/next-session"
 
@@ -77,8 +79,15 @@ while true; do
     steam)
       case "$compositor" in
         gamescope)
+          # -e: Steam integration (focus, overlay, Steam's keyboard). Steam
+          # runs in a restart loop inside, so gamescope survives its updates.
           # shellcheck disable=SC2086 # word splitting intended
-          gamescope -f ${DECKARD_GAMESCOPE_ARGS:-} -- steam -gamepadui -steamos3 -steampal -steamdeck || true
+          gamescope -e -f ${DECKARD_GAMESCOPE_ARGS:-} -- deckard-steam-session || true
+          # Steam gone without a switch request (crash, gamescope exit): go
+          # back to Deckard instead of the text login.
+          if [[ ! -f $next_session_file ]]; then
+            echo deckard >"$next_session_file"
+          fi
           ;;
         cage)
           echo "Steam requires gamescope (Vulkan GPU); cannot run under cage" >&2

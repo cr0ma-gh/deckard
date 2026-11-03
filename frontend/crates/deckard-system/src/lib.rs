@@ -7,6 +7,7 @@
 use std::path::{Path, PathBuf};
 
 pub mod installer;
+pub mod power;
 mod session;
 pub mod wifi;
 

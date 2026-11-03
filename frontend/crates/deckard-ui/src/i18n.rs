@@ -81,11 +81,18 @@ pub struct Strings {
     pub wifi_secured: String,
     pub wifi_open: String,
     pub wifi_active: String,
+    pub reboot: String,
+    pub reboot_info: String,
+    pub power_off: String,
+    pub power_off_info: String,
     pub keyboard_shift: String,
     pub keyboard_symbols: String,
     pub keyboard_space: String,
     pub keyboard_delete: String,
-    pub keyboard_done: String,
+    pub keyboard_caps: String,
+    pub keyboard_enter: String,
+    pub keyboard_letters: String,
+    pub keyboard_hide: String,
 }
 
 const EN: &str = include_str!("../assets/i18n/en.toml");

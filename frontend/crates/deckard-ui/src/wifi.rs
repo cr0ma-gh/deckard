@@ -2,7 +2,7 @@
 //! connection status. Pure state; the application runs the requests.
 
 use crate::i18n::{Strings, fill};
-use crate::keyboard::{Keyboard, KeyboardLabels, KeyboardResult, keyboard_layer};
+use crate::keyboard::{Keyboard, KeyboardLabels, KeyboardResult, Shortcut, keyboard_layer};
 use crate::layout::{Align, Layer, Quad, REFERENCE_HEIGHT, Rect, Text, hint_bar, scroll_start};
 use crate::nav::Nav;
 
@@ -101,6 +101,36 @@ impl WifiPage {
         self.keyboard = None;
     }
 
+    /// A button shortcut (X, Y, L1/R1, L2, R2) on the open keyboard.
+    pub fn keyboard_shortcut(&mut self, shortcut: Shortcut) -> Option<WifiAction> {
+        let result = self.keyboard.as_mut()?.1.shortcut(shortcut);
+        self.keyboard_result(result)
+    }
+
+    /// A tap or click on a `width`×`height` screen while the keyboard is open.
+    pub fn keyboard_tap(&mut self, x: f32, y: f32, width: f32, height: f32) -> Option<WifiAction> {
+        let result = self.keyboard.as_mut()?.1.tap(x, y, width, height);
+        self.keyboard_result(result)
+    }
+
+    /// Done connects with the typed password; Cancel closes the keyboard.
+    fn keyboard_result(&mut self, result: Option<KeyboardResult>) -> Option<WifiAction> {
+        match result? {
+            KeyboardResult::Done(password) => {
+                let (ssid, _) = self.keyboard.take()?;
+                self.status = WifiStatus::Connecting(ssid.clone());
+                Some(WifiAction::Connect {
+                    ssid,
+                    password: Some(password),
+                })
+            }
+            KeyboardResult::Cancel => {
+                self.keyboard = None;
+                None
+            }
+        }
+    }
+
     fn busy(&self) -> bool {
         matches!(
             self.status,
@@ -109,23 +139,9 @@ impl WifiPage {
     }
 
     pub fn handle(&mut self, nav: Nav, strings: &Strings) -> Option<WifiAction> {
-        if let Some((ssid, kb)) = &mut self.keyboard {
-            return match kb.handle(nav) {
-                Some(KeyboardResult::Done(password)) => {
-                    let ssid = ssid.clone();
-                    self.keyboard = None;
-                    self.status = WifiStatus::Connecting(ssid.clone());
-                    Some(WifiAction::Connect {
-                        ssid,
-                        password: Some(password),
-                    })
-                }
-                Some(KeyboardResult::Cancel) => {
-                    self.keyboard = None;
-                    None
-                }
-                None => None,
-            };
+        if let Some((_, kb)) = &mut self.keyboard {
+            let result = kb.handle(nav);
+            return self.keyboard_result(result);
         }
         match nav {
             Nav::Back => return Some(WifiAction::Close),
@@ -193,8 +209,7 @@ impl Default for WifiPage {
     }
 }
 
-const WHITE: [f32; 4] = [1.0, 1.0, 1.0, 1.0];
-const DIM: [f32; 4] = [0.78, 0.84, 0.95, 0.85];
+use crate::theme::{PANEL, SCRIM, TEXT as WHITE, TEXT_DIM as DIM};
 
 /// A left-aligned line of text (use struct update syntax for other alignments).
 fn line(text: String, x: f32, y: f32, size: f32, color: [f32; 4], bold: bool, w: f32) -> Text {
@@ -221,7 +236,7 @@ pub fn wifi_layers(page: &WifiPage, strings: &Strings, width: f32, height: f32) 
             w: width,
             h: height,
         },
-        color: [0.0, 0.0, 0.0, 0.75],
+        color: SCRIM,
         radius: 0.0,
     });
     let panel = Rect::centered(
@@ -232,7 +247,7 @@ pub fn wifi_layers(page: &WifiPage, strings: &Strings, width: f32, height: f32) 
     );
     layer.quads.push(Quad {
         rect: panel,
-        color: [0.05, 0.07, 0.15, 1.0],
+        color: PANEL,
         radius: 18.0 * s,
     });
     let x = panel.x + 40.0 * s;
@@ -296,7 +311,7 @@ pub fn wifi_layers(page: &WifiPage, strings: &Strings, width: f32, height: f32) 
                     w: w + 32.0 * s,
                     h: 46.0 * s,
                 },
-                color: [0.40, 0.55, 1.0, 0.30],
+                color: crate::theme::ACCENT,
                 radius: 12.0 * s,
             });
         }
@@ -345,10 +360,13 @@ pub fn wifi_layers(page: &WifiPage, strings: &Strings, width: f32, height: f32) 
     if let Some((_, kb)) = &page.keyboard {
         let labels = KeyboardLabels {
             shift: strings.keyboard_shift.clone(),
+            caps: strings.keyboard_caps.clone(),
+            enter: strings.keyboard_enter.clone(),
             symbols: strings.keyboard_symbols.clone(),
+            letters: strings.keyboard_letters.clone(),
             space: strings.keyboard_space.clone(),
             delete: strings.keyboard_delete.clone(),
-            done: strings.keyboard_done.clone(),
+            hide: strings.keyboard_hide.clone(),
         };
         layers.push(keyboard_layer(kb, &labels, width, height));
     }
@@ -388,14 +406,10 @@ mod tests {
         for c in "segreta".chars() {
             page.type_char(c);
         }
-        // Move to "Done" on the special row and press it.
-        for _ in 0..3 {
-            page.handle(Nav::Down, &strings);
-        }
-        for _ in 0..4 {
-            page.handle(Nav::Right, &strings);
-        }
-        let action = page.handle(Nav::Confirm, &strings);
+        // Y types a space, X deletes it, R2 confirms.
+        page.keyboard_shortcut(Shortcut::Space);
+        page.keyboard_shortcut(Shortcut::Backspace);
+        let action = page.keyboard_shortcut(Shortcut::Enter);
         assert_eq!(
             action,
             Some(WifiAction::Connect {
@@ -404,6 +418,15 @@ mod tests {
             })
         );
         assert_eq!(page.status, WifiStatus::Connecting("Casa".into()));
+        assert!(!page.keyboard_open());
+        assert_eq!(page.keyboard_shortcut(Shortcut::Enter), None, "no keyboard");
+        assert_eq!(page.keyboard_tap(100.0, 700.0, 1280.0, 800.0), None);
+
+        // B closes the keyboard without connecting.
+        page.update(WifiUpdate::Error("wrong password".into()), &strings);
+        page.handle(Nav::Confirm, &strings);
+        assert!(page.keyboard_open());
+        assert_eq!(page.handle(Nav::Back, &strings), None);
         assert!(!page.keyboard_open());
     }
 

@@ -29,10 +29,19 @@ protette chiedono una password, quindi serve anche una tastiera a schermo.
    lingua): "Cerca di nuovo", poi le reti ordinate (connessa per prima, poi per
    segnale). Rete protetta → tastiera; rete connessa → disconnetti; rete
    aperta → connetti subito.
-5. **Tastiera a schermo** (`deckard-ui/src/keyboard.rs`), riusabile: griglia
-   navigabile con croce/stick, pagine minuscole/maiuscole/simboli, tasti
-   Maiusc, simboli, spazio, cancella, fatto; B annulla. Con una tastiera fisica
-   si può anche scrivere direttamente (Invio conferma, Esc annulla).
+5. **Tastiera a schermo** (`deckard-ui/src/keyboard.rs`), riusabile, sul
+   modello di quella di SteamOS (provata sul Deck, la prima versione a griglia
+   era scomoda). Non esiste una tastiera pronta da riusare: i crate Rust offrono
+   solo la navigazione col gamepad, le tastiere Wayland (squeekboard, wvkbd)
+   sono solo touch e gamescope non ha i protocolli input-method, e quella di
+   Steam esiste solo con Steam in esecuzione. Come è fatta:
+   - layout da PC a tutta larghezza agganciato in basso (con Maiusc temporaneo,
+     Bloc Maiusc, pagina di accenti e simboli, frecce per il cursore, Chiudi);
+   - **touch**: si toccano i tasti (anche col mouse o con il trackpad);
+   - **tasti del Deck**: A preme, B chiude, X cancella (si ripete tenendolo
+     premuto), Y spazio, L2 Maiusc, R2 o Start Invio, L1/R1 spostano il cursore;
+   - con una tastiera fisica si scrive direttamente (Invio conferma, Esc chiude).
+   Aspetto ispirato a SteamOS, disegnato da zero senza asset di Valve.
 
 ## Conseguenze
 

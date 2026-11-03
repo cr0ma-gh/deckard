@@ -34,6 +34,20 @@ pub struct MenuButtons {
     pub back: bool,
 }
 
+/// Gamepad buttons pressed since the last [`Input::extra_buttons`] call,
+/// named by position (on the Deck: X = west, Y = north). The on-screen
+/// keyboard uses them as shortcuts.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct ExtraButtons {
+    pub west: bool,
+    pub north: bool,
+    pub l1: bool,
+    pub r1: bool,
+    pub l2: bool,
+    pub r2: bool,
+    pub start: bool,
+}
+
 /// Stick deflection that counts as a direction in menus.
 const MENU_STICK_THRESHOLD: i16 = 16_000;
 
@@ -48,6 +62,7 @@ pub struct Input {
     /// Menu presses seen since the last [`Input::menu_buttons`] call, so a tap
     /// shorter than a frame still counts.
     menu_latch: MenuButtons,
+    extra_latch: ExtraButtons,
 }
 
 impl MenuButtons {
@@ -90,6 +105,7 @@ impl Input {
             hotkeys: Hotkeys::default(),
             last_port0: PadState::default(),
             menu_latch: MenuButtons::default(),
+            extra_latch: ExtraButtons::default(),
         }
     }
 
@@ -135,6 +151,7 @@ impl Input {
         self.keyboard = PadState::default();
         self.menu_keys = [false; 3];
         self.menu_latch = MenuButtons::default();
+        self.extra_latch = ExtraButtons::default();
     }
 
     /// Menu controls held right now (from the last [`Input::poll`]) or pressed
@@ -155,6 +172,16 @@ impl Input {
             confirm: pad.is_pressed(Button::B) || self.menu_keys[0],
             back: pad.is_pressed(Button::A) || self.menu_keys[1] || self.menu_keys[2],
         }
+    }
+
+    /// Extra gamepad buttons pressed since the previous call.
+    pub fn extra_buttons(&mut self) -> ExtraButtons {
+        std::mem::take(&mut self.extra_latch)
+    }
+
+    /// Whether the west face button (X on the Deck) is held right now.
+    pub fn west_held(&self) -> bool {
+        self.last_port0.is_pressed(Button::Y)
     }
 
     /// Returns hotkeys pressed since the last call.
@@ -184,6 +211,17 @@ impl Input {
                         gilrs::Button::DPadRight => latch.right = true,
                         gilrs::Button::South => latch.confirm = true,
                         gilrs::Button::East => latch.back = true,
+                        _ => {}
+                    }
+                    let extra = &mut self.extra_latch;
+                    match button {
+                        gilrs::Button::West => extra.west = true,
+                        gilrs::Button::North => extra.north = true,
+                        gilrs::Button::LeftTrigger => extra.l1 = true,
+                        gilrs::Button::RightTrigger => extra.r1 = true,
+                        gilrs::Button::LeftTrigger2 => extra.l2 = true,
+                        gilrs::Button::RightTrigger2 => extra.r2 = true,
+                        gilrs::Button::Start => extra.start = true,
                         _ => {}
                     }
                 }
@@ -301,6 +339,7 @@ mod tests {
             hotkeys: Hotkeys::default(),
             last_port0: PadState::default(),
             menu_latch: MenuButtons::default(),
+            extra_latch: ExtraButtons::default(),
         }
     }
 

@@ -8,25 +8,27 @@ use std::time::{Duration, Instant};
 use anyhow::Context as _;
 use deckard_audio::AudioOutput;
 use deckard_config::{Config, Paths};
-use deckard_input::{Hotkeys, Input, MenuButtons, key_code};
+use deckard_input::{ExtraButtons, Hotkeys, Input, MenuButtons, key_code};
 use deckard_library::Library;
 use deckard_system::SessionTarget;
 use deckard_system::installer::{self as system_installer, InstallJob};
+use deckard_system::power::{self, PowerAction};
 use deckard_system::wifi::{self as system_wifi, WifiWorker};
 use deckard_ui::UiRenderer;
 use deckard_ui::i18n::{Strings, fill, next_language};
 use deckard_ui::installer::{
     DiskEntry, Installer, InstallerAction, InstallerEvent, installer_layer,
 };
+use deckard_ui::keyboard::Shortcut;
 use deckard_ui::layout::{Hints, MenuView, QuickHints, Toast, game_overlay, layout};
 use deckard_ui::nav::{Action, Menu, Setting, SettingsView};
 use deckard_ui::quick::{QuickAction, QuickMenu};
-use deckard_ui::repeat::{Held, Repeater};
+use deckard_ui::repeat::{Held, REPEAT_DELAY, REPEAT_INTERVAL, Repeater};
 use deckard_ui::wifi::{WifiAction, WifiNetwork, WifiPage, WifiUpdate, wifi_layers};
 use deckard_video::{Presented, Renderer, Scaling};
 use winit::application::ApplicationHandler;
 use winit::dpi::LogicalSize;
-use winit::event::{ElementState, WindowEvent};
+use winit::event::{ElementState, MouseButton, TouchPhase, WindowEvent};
 use winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoop};
 use winit::window::{Fullscreen, Window, WindowId};
 
@@ -64,6 +66,7 @@ impl Context {
             session_switching: deckard_system::session_switching_available(),
             installer_available: system_installer::is_live_system(),
             wifi_available: system_wifi::available(),
+            power_available: power::available(),
         }
     }
 
@@ -111,6 +114,10 @@ struct App {
     /// Wi-Fi page over the menu, and the thread that talks to NetworkManager.
     wifi: Option<WifiPage>,
     wifi_worker: Option<WifiWorker>,
+    /// When a held X (delete on the on-screen keyboard) repeats next.
+    backspace_repeat: Option<Instant>,
+    /// Last mouse position in window pixels, for clicks.
+    cursor: Option<(f32, f32)>,
     input: Input,
     audio: Option<AudioOutput>,
     running: Option<Running>,
@@ -156,6 +163,8 @@ pub fn run(ctx: Context, game: Option<Game>, options: Options) -> anyhow::Result
         install_job: None,
         wifi: None,
         wifi_worker: None,
+        backspace_repeat: None,
+        cursor: None,
         input: Input::new(),
         audio,
         running: None,
@@ -307,6 +316,8 @@ impl App {
                 }
             }
         }
+        let extra = self.input.extra_buttons();
+        self.keyboard_shortcuts(extra);
         self.poll_installer();
         self.poll_wifi();
 
@@ -394,6 +405,13 @@ impl App {
     }
 
     /// Opens the Wi-Fi page and starts a scan.
+    fn power(&mut self, action: PowerAction) {
+        if let Err(e) = power::request(action) {
+            tracing::error!("{e}");
+            self.view.show_toast(e.to_string());
+        }
+    }
+
     fn open_wifi(&mut self) {
         let worker = self.wifi_worker.get_or_insert_with(WifiWorker::start);
         worker.request(system_wifi::Request::Scan);
@@ -458,6 +476,68 @@ impl App {
         }
     }
 
+    /// Gamepad shortcuts on the on-screen keyboard (SteamOS-style): X delete
+    /// (repeats while held), Y space, L1/R1 cursor, L2 Shift, R2/Start Enter.
+    fn keyboard_shortcuts(&mut self, extra: ExtraButtons) {
+        let Some(page) = self.wifi.as_mut().filter(|p| p.keyboard_open()) else {
+            self.backspace_repeat = None;
+            return;
+        };
+        let now = Instant::now();
+        let mut shortcuts = Vec::new();
+        if extra.west {
+            shortcuts.push(Shortcut::Backspace);
+        }
+        if self.input.west_held() {
+            match self.backspace_repeat {
+                None => self.backspace_repeat = Some(now + REPEAT_DELAY),
+                Some(t) if now >= t => {
+                    shortcuts.push(Shortcut::Backspace);
+                    self.backspace_repeat = Some(now + REPEAT_INTERVAL);
+                }
+                Some(_) => {}
+            }
+        } else {
+            self.backspace_repeat = None;
+        }
+        for (pressed, shortcut) in [
+            (extra.north, Shortcut::Space),
+            (extra.l1, Shortcut::CursorLeft),
+            (extra.r1, Shortcut::CursorRight),
+            (extra.l2, Shortcut::Shift),
+            (extra.r2 || extra.start, Shortcut::Enter),
+        ] {
+            if pressed {
+                shortcuts.push(shortcut);
+            }
+        }
+        let actions: Vec<_> = shortcuts
+            .into_iter()
+            .filter_map(|s| page.keyboard_shortcut(s))
+            .collect();
+        for action in actions {
+            self.perform_wifi(action);
+        }
+    }
+
+    /// A touch or left click at window pixel (`x`, `y`).
+    fn pointer_press(&mut self, x: f32, y: f32) {
+        if !matches!(self.mode, Mode::Menu) {
+            return;
+        }
+        let Some(running) = &self.running else {
+            return;
+        };
+        let gpu = running.renderer.gpu();
+        let (width, height) = (gpu.width as f32, gpu.height as f32);
+        let Some(page) = self.wifi.as_mut().filter(|p| p.keyboard_open()) else {
+            return;
+        };
+        if let Some(action) = page.keyboard_tap(x, y, width, height) {
+            self.perform_wifi(action);
+        }
+    }
+
     /// Physical keyboard while the on-screen keyboard is open: type into the
     /// password field instead of driving the menu. Returns true if consumed.
     fn wifi_keyboard_input(&mut self, event: &winit::event::KeyEvent) -> bool {
@@ -518,6 +598,8 @@ impl App {
             Action::SwitchSession => self.switch_session(event_loop),
             Action::OpenInstaller => self.open_installer(),
             Action::OpenWifi => self.open_wifi(),
+            Action::Reboot => self.power(PowerAction::Reboot),
+            Action::PowerOff => self.power(PowerAction::PowerOff),
             Action::Notice(message) => self.view.show_toast(message),
             Action::Rescan => {
                 self.ctx.library = Library::scan(&self.ctx.config, &self.ctx.paths);
@@ -975,6 +1057,21 @@ impl ApplicationHandler for App {
                     self.input
                         .handle_key(code, event.state == ElementState::Pressed);
                 }
+            }
+            WindowEvent::CursorMoved { position, .. } => {
+                self.cursor = Some((position.x as f32, position.y as f32));
+            }
+            WindowEvent::MouseInput {
+                state: ElementState::Pressed,
+                button: MouseButton::Left,
+                ..
+            } => {
+                if let Some((x, y)) = self.cursor {
+                    self.pointer_press(x, y);
+                }
+            }
+            WindowEvent::Touch(touch) if touch.phase == TouchPhase::Started => {
+                self.pointer_press(touch.location.x as f32, touch.location.y as f32);
             }
             WindowEvent::RedrawRequested => self.frame(event_loop),
             _ => {}

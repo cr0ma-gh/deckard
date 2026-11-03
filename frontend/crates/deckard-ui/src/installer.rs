@@ -151,9 +151,8 @@ impl Installer {
     }
 }
 
-const WHITE: [f32; 4] = [1.0, 1.0, 1.0, 1.0];
-const DIM: [f32; 4] = [0.80, 0.85, 0.95, 0.85];
-const DANGER: [f32; 4] = [1.0, 0.45, 0.40, 1.0];
+use crate::theme::DANGER;
+use crate::theme::{PANEL, SCRIM, TEXT as WHITE, TEXT_DIM as DIM};
 
 fn text(
     text: impl Into<String>,
@@ -187,7 +186,7 @@ pub fn installer_layer(installer: &Installer, strings: &Strings, width: f32, hei
             w: width,
             h: height,
         },
-        color: [0.0, 0.0, 0.0, 0.75],
+        color: SCRIM,
         radius: 0.0,
     });
     let panel = Rect::centered(
@@ -199,7 +198,7 @@ pub fn installer_layer(installer: &Installer, strings: &Strings, width: f32, hei
     layer.quads.push(Quad {
         rect: panel,
         // Opaque: on sRGB surfaces even 3% transparency lets the menu show through.
-        color: [0.05, 0.07, 0.15, 1.0],
+        color: PANEL,
         radius: 18.0 * s,
     });
     let x = panel.x + 40.0 * s;
@@ -230,7 +229,7 @@ pub fn installer_layer(installer: &Installer, strings: &Strings, width: f32, hei
                                 w: w + 32.0 * s,
                                 h: 48.0 * s,
                             },
-                            color: [0.40, 0.55, 1.0, 0.30],
+                            color: crate::theme::ACCENT,
                             radius: 12.0 * s,
                         });
                     }
@@ -287,7 +286,7 @@ pub fn installer_layer(installer: &Installer, strings: &Strings, width: f32, hei
             };
             layer.quads.push(Quad {
                 rect: bar,
-                color: [1.0, 1.0, 1.0, 0.15],
+                color: crate::theme::SURFACE,
                 radius: 9.0 * s,
             });
             layer.quads.push(Quad {
@@ -295,7 +294,7 @@ pub fn installer_layer(installer: &Installer, strings: &Strings, width: f32, hei
                     w: bar.w * f32::from(*percent) / 100.0,
                     ..bar
                 },
-                color: [0.40, 0.60, 1.0, 1.0],
+                color: crate::theme::ACCENT,
                 radius: 9.0 * s,
             });
             y += 40.0 * s;

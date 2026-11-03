@@ -30,6 +30,11 @@ impl Rect {
             h,
         }
     }
+
+    /// Whether the point is inside (for touch and mouse hit tests).
+    pub fn contains(&self, x: f32, y: f32) -> bool {
+        x >= self.x && x < self.x + self.w && y >= self.y && y < self.y + self.h
+    }
 }
 
 /// RGBA, 0..1, not premultiplied.
@@ -209,11 +214,7 @@ impl MenuView {
     }
 }
 
-fn rgba(rgb: [f32; 3], a: f32) -> Color {
-    [rgb[0], rgb[1], rgb[2], a]
-}
-
-const WHITE: [f32; 3] = [1.0, 1.0, 1.0];
+use crate::theme;
 
 /// Labels of the bottom hint bar.
 #[derive(Debug, Clone)]
@@ -267,7 +268,7 @@ pub fn layout(menu: &Menu, view: &MenuView, hints: &Hints, width: f32, height: f
         let tile = Rect::centered(x, ICON_Y * s, size, size);
         main.quads.push(Quad {
             rect: tile,
-            color: rgba(cat.color, 0.85 * alpha),
+            color: theme::faded(theme::mix(theme::SURFACE, theme::ACCENT, closeness), alpha),
             radius: size * 0.22,
         });
         match &cat.badge {
@@ -276,7 +277,7 @@ pub fn layout(menu: &Menu, view: &MenuView, hints: &Hints, width: f32, height: f
                 x,
                 y: ICON_Y * s - 17.0 * s,
                 size: 28.0 * s,
-                color: rgba(WHITE, alpha),
+                color: theme::faded(theme::TEXT, alpha),
                 bold: true,
                 align: Align::Center,
                 max_width: size,
@@ -291,7 +292,7 @@ pub fn layout(menu: &Menu, view: &MenuView, hints: &Hints, width: f32, height: f
                             size * 0.46,
                             6.0 * s,
                         ),
-                        color: rgba(WHITE, alpha),
+                        color: theme::faded(theme::TEXT, alpha),
                         radius: 3.0 * s,
                     });
                 }
@@ -303,7 +304,7 @@ pub fn layout(menu: &Menu, view: &MenuView, hints: &Hints, width: f32, height: f
                 x,
                 y: ICON_Y * s + size / 2.0 + 12.0 * s,
                 size: 22.0 * s,
-                color: rgba(WHITE, closeness),
+                color: theme::faded(theme::TEXT, closeness),
                 bold: false,
                 align: Align::Center,
                 max_width: ICON_SPACING * 1.6 * s,
@@ -343,7 +344,14 @@ pub fn layout(menu: &Menu, view: &MenuView, hints: &Hints, width: f32, height: f
             }
             main.quads.push(Quad {
                 rect: Rect::centered(focal, y, 40.0 * s, 40.0 * s),
-                color: rgba(cat.color, 0.9 * alpha),
+                color: theme::faded(
+                    if is_selected {
+                        theme::ACCENT
+                    } else {
+                        theme::SURFACE
+                    },
+                    alpha,
+                ),
                 radius: 10.0 * s,
             });
             main.texts.push(Text {
@@ -351,7 +359,14 @@ pub fn layout(menu: &Menu, view: &MenuView, hints: &Hints, width: f32, height: f
                 x: text_x,
                 y: y - if item.sublabel.is_some() { 26.0 } else { 15.0 } * s,
                 size: if is_selected { 27.0 } else { 24.0 } * s,
-                color: rgba(WHITE, alpha),
+                color: theme::faded(
+                    if is_selected {
+                        theme::TEXT
+                    } else {
+                        theme::TEXT_DIM
+                    },
+                    alpha,
+                ),
                 bold: is_selected,
                 align: Align::Left,
                 max_width: text_width,
@@ -362,7 +377,7 @@ pub fn layout(menu: &Menu, view: &MenuView, hints: &Hints, width: f32, height: f
                     x: text_x,
                     y: y + 6.0 * s,
                     size: 16.0 * s,
-                    color: [0.82, 0.86, 0.95, 0.8 * alpha],
+                    color: theme::faded(theme::TEXT_MUTED, alpha),
                     bold: false,
                     align: Align::Left,
                     max_width: text_width,
@@ -418,7 +433,7 @@ pub fn hint_bar(layer: &mut Layer, hints: &[(&str, &str)], right: f32, y: f32, s
             x,
             y: y - 11.0 * s,
             size: 18.0 * s,
-            color: rgba(WHITE, 0.85),
+            color: theme::TEXT_DIM,
             bold: false,
             align: Align::Left,
             max_width: label_width + 20.0 * s,
@@ -427,7 +442,7 @@ pub fn hint_bar(layer: &mut Layer, hints: &[(&str, &str)], right: f32, y: f32, s
         x -= 10.0 * s + badge_w / 2.0;
         layer.quads.push(Quad {
             rect: Rect::centered(x, y, badge_w, 28.0 * s),
-            color: [1.0, 1.0, 1.0, 0.85],
+            color: theme::BADGE,
             radius: 14.0 * s,
         });
         layer.texts.push(Text {
@@ -435,7 +450,7 @@ pub fn hint_bar(layer: &mut Layer, hints: &[(&str, &str)], right: f32, y: f32, s
             x,
             y: y - 10.0 * s,
             size: 16.0 * s,
-            color: [0.10, 0.12, 0.20, 1.0],
+            color: theme::TEXT_DARK,
             bold: true,
             align: Align::Center,
             max_width: badge_w,
@@ -456,7 +471,7 @@ pub fn toast_layer(layer: &mut Layer, toast: &Toast, width: f32, height: f32, s:
     );
     layer.quads.push(Quad {
         rect,
-        color: [0.06, 0.07, 0.12, 0.85 * fade],
+        color: theme::faded(theme::PANEL, 0.95 * fade),
         radius: 14.0 * s,
     });
     layer.texts.push(Text {
@@ -464,7 +479,7 @@ pub fn toast_layer(layer: &mut Layer, toast: &Toast, width: f32, height: f32, s:
         x: width / 2.0,
         y: rect.y + 14.0 * s,
         size: 19.0 * s,
-        color: rgba(WHITE, fade),
+        color: theme::faded(theme::TEXT, fade),
         bold: false,
         align: Align::Center,
         max_width: rect.w - 24.0 * s,
@@ -507,7 +522,7 @@ pub fn game_overlay(
                 w: width,
                 h: height,
             },
-            color: [0.0, 0.0, 0.0, 0.55],
+            color: theme::faded(theme::SCRIM, 0.8),
             radius: 0.0,
         });
         let panel_w = (width * 0.42).max(500.0 * s).min(width);
@@ -518,7 +533,7 @@ pub fn game_overlay(
                 w: panel_w,
                 h: height,
             },
-            color: [0.05, 0.07, 0.15, 0.97],
+            color: theme::PANEL,
             radius: 0.0,
         });
         layer.texts.push(Text {
@@ -526,7 +541,7 @@ pub fn game_overlay(
             x: 56.0 * s,
             y: 44.0 * s,
             size: 30.0 * s,
-            color: rgba(WHITE, 1.0),
+            color: theme::TEXT,
             bold: true,
             align: Align::Left,
             max_width: panel_w - 112.0 * s,
@@ -556,8 +571,8 @@ pub fn game_overlay(
                         w: panel_w - 64.0 * s,
                         h: 48.0 * s,
                     },
-                    color: [0.40, 0.55, 1.0, 0.30],
-                    radius: 12.0 * s,
+                    color: theme::ACCENT,
+                    radius: 8.0 * s,
                 });
             }
             let alpha = if is_selected { 1.0 } else { 0.75 };
@@ -570,7 +585,7 @@ pub fn game_overlay(
                 x: 56.0 * s,
                 y: y + 11.0 * s,
                 size: 21.0 * s,
-                color: rgba(WHITE, alpha),
+                color: theme::faded(theme::TEXT, alpha),
                 bold: is_selected,
                 align: Align::Left,
                 max_width: panel_w - 112.0 * s - value_width,
@@ -586,7 +601,11 @@ pub fn game_overlay(
                     x: panel_w - 56.0 * s,
                     y: y + 12.0 * s,
                     size: 19.0 * s,
-                    color: [0.75, 0.85, 1.0, alpha],
+                    color: if is_selected {
+                        theme::TEXT
+                    } else {
+                        theme::TEXT_DIM
+                    },
                     bold: false,
                     align: Align::Right,
                     max_width: value_width,

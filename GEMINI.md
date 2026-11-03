@@ -136,8 +136,9 @@ Deckard/
   1280×800 scalata sull'altezza), `i18n.rs` (testi), `render/` (wgpu + glyphon).
   Le modifiche al comportamento vanno in `nav`/`layout` e si testano lì; il
   renderer si verifica con screenshot.
-- Categorie: Impostazioni (Scala intera, Filtro morbido, Lingua, Ricarica
-  libreria, Esci) poi un sistema per ogni cartella con giochi; senza giochi
+- Categorie: Impostazioni (Scala intera, Filtro morbido, Shader, Volume,
+  Lingua, Wi-Fi, Ricarica libreria, Esci, Passa a Steam, Installa su disco,
+  Riavvia, Spegni: le ultime compaiono solo dove servono) poi un sistema per ogni cartella con giochi; senza giochi
   compare una voce che indica la cartella ROM. Un gioco senza core mostra
   "Core mancante" invece di avviarsi. Ogni voce ha un `id` stabile: la
   selezione resta al suo posto anche quando cambia l'etichetta.
@@ -147,6 +148,10 @@ Deckard/
   sinistra/destra), disegno in `layout::game_overlay` come pannello a sinistra
   sopra il gioco in pausa. I messaggi a comparsa (stato salvato/caricato, slot)
   usano `Toast`, anche fuori dal menu rapido.
+- Colori: **tutti** in `deckard-ui/src/theme.rs` (tema Steam Deck, ADR 0012:
+  blu Steam `#1A9FFF` per l'elemento selezionato, superfici blu-grigio scuro);
+  lo sfondo animato in `render/ui.wgsl` usa le stesse tinte. Non scrivere
+  colori letterali nei moduli di layout.
 - Font: **Inter** (licenza OFL, `deckard-ui/assets/fonts/`, con `OFL.txt`),
   unico font caricato: aspetto identico ovunque. Icone disegnate con forme e
   sigle, nessun asset di terzi.
@@ -250,7 +255,8 @@ Comandi non gestiti: restituire `false` e loggare una volta sola a livello `debu
   (il repository si modifica anche da Windows).
 - Utente `deck` (uid 1000) creato da `airootfs/etc/sysusers.d/deckard.conf`,
   senza password, `sudo` senza password (immagine live).
-- greetd `initial_session` → `deckard-session` (`session/`), che avvia
+- greetd `initial_session` → `deckard-session` (`session/`, esporta
+  `DECKARD_SESSION=1`), che avvia
   `gamescope -f -- deckard --fullscreen` sull'hardware e `cage -s -- deckard`
   nelle macchine virtuali (`systemd-detect-virt`); log in
   `~/.local/state/deckard/session.log`; override in
@@ -268,6 +274,11 @@ Comandi non gestiti: restituire `false` e loggare una volta sola a livello `debu
   `gamescope`. La sessione Steam usa `gamescope` con `steam -gamepadui`.
 - Avvio: autologin (es. `greetd`) su un utente non-root `deck` → lancia il
   **session manager** di `session/`.
+- **Sessione Steam** (ADR 0012): `gamescope -e -- deckard-steam-session`, che
+  riavvia Steam quando si chiude da solo (aggiornamenti) finché non arriva un
+  `next-session`; `steamos-session-select` (chiamato da "Passa al desktop" di
+  Steam) torna a Deckard. Riavvia/Spegni nelle Impostazioni solo con
+  `DECKARD_SESSION` (`deckard-system/src/power.rs`).
 - **Cambio sessione**: il frontend scrive la sessione successiva in un file di
   stato (es. `~/.local/state/deckard/next-session`) ed esce; il session manager
   legge il file e avvia l'altra sessione. Lo stesso meccanismo va reso
@@ -283,7 +294,8 @@ Comandi non gestiti: restituire `false` e loggare una volta sola a livello `debu
   se cambia il profilo releng.
 - **Rete** (ADR 0011): NetworkManager (non networkd/iwd), comandato con `nmcli`
   dall'utente `deck` grazie alla regola polkit per `wheel`. Pagina Wi-Fi in
-  `deckard-ui/src/wifi.rs`, tastiera a schermo riusabile in
+  `deckard-ui/src/wifi.rs`, tastiera a schermo riusabile in stile SteamOS
+  (touch + scorciatoie X/Y/L1/R1/L2/R2, `Input::extra_buttons`) in
   `deckard-ui/src/keyboard.rs`, backend in `deckard-system/src/wifi.rs`
   (`DECKARD_FAKE_WIFI=1` per provarla senza Wi-Fi).
 
@@ -362,7 +374,8 @@ Se aggiungi o cambi comandi, aggiorna questa sezione.
   `#![allow(clippy::unwrap_used)]`).
 - Script shell: `bash` con `set -euo pipefail`, verificati con `shellcheck` prima del
   push (è installato in WSL): `shellcheck -x --source-path=SCRIPTDIR scripts/*.sh
-  session/deckard-session session/*.sh installer/deckard-install
+  session/deckard-session session/deckard-steam-session
+  session/steamos-session-select session/*.sh installer/deckard-install
   os/archiso/profiledef.overrides.sh` (lo stesso comando della CI).
 
 ## 8. Lingua `[CONDIVISO]`
